@@ -7,6 +7,7 @@
 //
 // 計算は純粋 (tests/TestClimate.cpp)。シーンからエリアを集めるのは ClimateField (同じファイル)。
 
+#include "core/paint/Runs.h"
 #include "core/reflect/Reflect.h"
 #include "rm_engine/game_production/runtime/Scene.h"
 #include "rm_engine/space2d/runtime/Transform2D.h"
@@ -172,10 +173,9 @@ struct PaintGrid {
     int At(int x, int z) const;
     bool Empty() const { return ids.empty(); }
 };
-// 番号の並び -> "1*12,0*3,2" (続く同じ番号をまとめる)。
-std::string EncodeRuns(std::span<const int> ids);
-// その逆。`count` 個にそろえる (足りない分は 0、多い分は捨てる)。読めない所は 0。
-std::vector<int> DecodeRuns(std::string_view text, size_t count);
+// 番号の並び <-> "1*12,0*3,2" (ランレングス): 核の 1 か所 (core/paint/Runs.h。タイルマップも使う)。
+using paint::DecodeRuns;
+using paint::EncodeRuns;
 // 層 `layer` の筆の塗り (気候: 種類の番号 / 雲: 雲の量 + 1 / 雨雲: 降る量 + 1)。
 PaintGrid PaintOf(const ClimateMap& map, MapLayer layer = MapLayer::Climate);
 // `grid` を地図の層 `layer` に書く (塗った所だけを囲む長方形に縮める。何も塗っていない: 幅 0)。

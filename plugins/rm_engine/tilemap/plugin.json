@@ -1,0 +1,11 @@
+{
+  "format": 1,
+  "author": "rm_engine",
+  "name": "tilemap",
+  "displayName": "タイルマップ",
+  "version": "0.0.1",
+  "software": ["game"],
+  "requires": [
+    { "author": "rm_engine", "name": "space2d" }
+  ]
+}

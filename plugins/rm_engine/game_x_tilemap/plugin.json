@@ -1,0 +1,14 @@
+{
+  "format": 1,
+  "author": "rm_engine",
+  "name": "game_x_tilemap",
+  "displayName": "ゲーム制作 × タイルマップ",
+  "version": "0.0.1",
+  "connectorFor": { "author": "rm_engine", "name": "game_production" },
+  "requires": [
+    { "author": "rm_engine", "name": "game_production" },
+    { "author": "rm_engine", "name": "game_x_2d" },
+    { "author": "rm_engine", "name": "space2d" },
+    { "author": "rm_engine", "name": "tilemap" }
+  ]
+}

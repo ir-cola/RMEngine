@@ -41,6 +41,10 @@
 #include "rm_engine/navigation_x_3d/runtime/Id.h"
 #include "rm_engine/navigation_x_physics/runtime/Id.h"
 #include "rm_engine/game_x_2d/runtime/Id.h"
+#include "rm_engine/game_x_tilemap/editor/Connector.h"
+#include "rm_engine/game_x_tilemap/runtime/Id.h"
+#include "rm_engine/tilemap/editor/Register.h"
+#include "rm_engine/tilemap/runtime/Id.h"
 #include "rm_engine/physics/editor/Connector.h"
 #include "rm_engine/physics/runtime/Id.h"
 #include "rm_engine/game_x_audio/editor/Connector.h"
@@ -80,6 +84,8 @@ std::span<const BuiltinPlugin> BuiltinPlugins() {
         {animation_x_physics::kPluginId, nullptr},  // ルートモーションを物理のキャラクターの速さに (ランタイムだけ)
         {space2d::kPluginId, nullptr},
         {game_x_2d::kPluginId, &game_x_2d::RegisterEditor},
+        {tilemap::kPluginId, &tilemap::RegisterEditor},  // タイルセット (.rmtileset) と純粋な計算 (ゲーム制作を知らない)
+        {game_x_tilemap::kPluginId, &game_x_tilemap::RegisterEditor},
         {physics::kPluginId, &physics::RegisterEditor},
         {game_x_audio::kPluginId, &game_x_audio::RegisterEditor},
         {game_ui::kPluginId, &game_ui::RegisterEditor},

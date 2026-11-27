@@ -400,6 +400,11 @@ void Painter::Image(ID2D1Bitmap* bmp, const Rect& dst, float opacity) {
     dc_->DrawBitmap(bmp, ToD2D(dst), opacity, D2D1_INTERPOLATION_MODE_HIGH_QUALITY_CUBIC, nullptr, nullptr);
 }
 
+void Painter::ImageCrisp(ID2D1Bitmap* bmp, const Rect& dst, float opacity) {
+    if (!bmp) return;
+    dc_->DrawBitmap(bmp, ToD2D(dst), opacity, D2D1_INTERPOLATION_MODE_NEAREST_NEIGHBOR, nullptr, nullptr);
+}
+
 void Painter::ImageTinted(ID2D1Bitmap* bmp, const Rect& dst, Color c) {
     if (!bmp || dst.w <= 0 || dst.h <= 0) return;
     if (tintOwner_ != dc_) {

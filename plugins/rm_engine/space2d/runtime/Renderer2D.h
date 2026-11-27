@@ -4,7 +4,7 @@
 // Direct2D は回転・拡大縮小・色味付きの画像をもう GPU で描ける)。
 //
 //   lines    (平面上: 格子)                                  すべての下
-//   sprites  (画像、または 1 色の四角)                        奥から手前へ、渡された順
+//   sprites  (画像、または 1 色の四角、またはスプライトの束)   奥から手前へ、渡された順
 //   overlay  (平面上: 選んだものの輪郭)                       すべての上
 //   debug    (平面上: ゲームの rm::Debug の線)                その上: 一度に多数。同じ色と太さの
 //                                                              ひと続きごとに 1 回描く
@@ -16,7 +16,7 @@
 #include "rm_engine/space2d/runtime/Atlas.h"
 #include "rm_engine/space2d/runtime/View2D.h"
 
-#include <d2d1_1.h>
+#include <d2d1_3.h>
 #include <wrl/client.h>
 
 #include <span>
@@ -37,6 +37,10 @@ struct SpriteDraw {
     Color color{1, 1, 1, 1};       // 画像の色にかける (白: そのまま)
     bool flipX = false, flipY = false;
     bool crisp = false;            // 滑らかにせず最近傍のピクセル (ドット絵)
+    // スプライトの束 (Direct2D の ID2D1SpriteBatch: 1 枚の画像 `image` から切った多くの四角を 1 回で描く。
+    // タイルマップの区画)。あると `part` `size` `flip*` は使わず、束の中の四角 (その座標は `world` の前の
+    // 平面の単位。色も束の中) を `world` で置いて描く。`crisp` は補間 (最近傍 / 線形)。束と画像は呼ぶ側が持つ。
+    ID2D1SpriteBatch* batch = nullptr;
 };
 
 struct RenderFrame2D {
@@ -62,7 +66,8 @@ private:
 
     Microsoft::WRL::ComPtr<ID2D1SolidColorBrush> brush_;
     Microsoft::WRL::ComPtr<ID2D1Effect> tint_;  // ColorMatrix: 画像に色をかける
-    ID2D1DeviceContext* owner_ = nullptr;       // brush_ と tint_ を作ったコンテキスト
+    Microsoft::WRL::ComPtr<ID2D1DeviceContext3> dc3_;  // スプライトの束を描く (Windows 10 から)
+    ID2D1DeviceContext* owner_ = nullptr;       // brush_ と tint_ と dc3_ を作ったコンテキスト
 };
 
 }  // namespace rm::space2d
