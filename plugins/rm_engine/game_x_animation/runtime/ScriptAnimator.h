@@ -11,5 +11,7 @@ const game_production::ScriptApiPart& ScriptAnimatorPart();
 const game_production::ScriptApiPart& ScriptAnimatorRulesPart();
 // ルートモーションとレイヤーの重み (rm::Animator::SetRootMotion / RootDelta / RootTurn / SetLayerWeight)。
 const game_production::ScriptApiPart& ScriptAnimatorRootPart();
+// IK (rm::Animator::SetIkTarget / SetIkWeight / LookAt)。
+const game_production::ScriptApiPart& ScriptAnimatorIkPart();
 
 }  // namespace rm::game_x_animation

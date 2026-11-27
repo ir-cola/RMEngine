@@ -5,12 +5,14 @@
 #include "Test.h"
 
 #include "rm_engine/animation3d/runtime/ClipTime.h"
+#include "rm_engine/animation3d/runtime/Ik.h"
 #include "rm_engine/animation3d/runtime/Player.h"
 #include "rm_engine/animation3d/runtime/Pose.h"
 #include "rm_engine/animation3d/runtime/RootMotion.h"
 #include "rm_engine/space3d/runtime/View.h"
 
 #include <cmath>
+#include <algorithm>
 #include <numbers>
 
 using namespace rm;
@@ -728,4 +730,74 @@ RM_TEST(Anim3d_PlayerRootMotion) {
     CHECK(NearDelta(p.RootStep(), {}) && !p.RootActive());
     CHECK(p.RootBoneOf(0) == 0 && p.RootBoneOf(2) == -1);
     CHECK(NearDelta(p.RootTotalsOf(1), {{0, 0, 3.f}, 0}));
+}
+
+// --- IK (docs/ANIMATION.md 7-2-1。Ik.h) ---
+
+namespace {
+
+// 腰 (根、高さ 1) → 腿 → 膝 → 足首 (下へ 0.45 ずつ)。
+Skeleton Leg() {
+    Skeleton s;
+    s.bones.push_back(MakeBone("腰", -1, {0, 1, 0}));
+    s.bones.push_back(MakeBone("腿", 0, {0.1f, 0, 0}));
+    s.bones.push_back(MakeBone("膝", 1, {0, -0.45f, 0}));
+    s.bones.push_back(MakeBone("足首", 2, {0, -0.45f, 0}));
+    return s;
+}
+
+float Dist(Vec3 a, Vec3 b) { return Length(a - b); }
+
+}  // namespace
+
+RM_TEST(Anim3d_FromToAndLimit) {
+    CHECK(NearV(QuatRotate(FromTo({1, 0, 0}, {0, 1, 0}), {1, 0, 0}), {0, 1, 0}));
+    CHECK(NearV(QuatRotate(FromTo({0, 0, 1}, {0, 0, -1}), {0, 0, 1}), {0, 0, -1}));  // 反対向き
+    CHECK(SameRotation(FromTo({0, 0, 0}, {1, 0, 0}), Quat{}));
+    const Quat big = QuatAxisAngle({0, 1, 0}, 2.f);
+    CHECK(SameRotation(LimitAngle(big, 0.5f), QuatAxisAngle({0, 1, 0}, 0.5f)));
+    CHECK(SameRotation(Partial(big, 0.f), Quat{}) && SameRotation(Partial(big, 1.f), big));
+}
+
+RM_TEST(Anim3d_SolveTwoBone) {
+    const Vec3 a{0, 1, 0}, b{0, 0.5f, 0.01f}, c{0, 0, 0};
+    // 届く目標: 先がちょうど着き、骨の長さは変わらない
+    const TwoBonePoints p = SolveTwoBone(a, b, c, {0, 0.4f, 0.3f}, {0, 0, 1});
+    CHECK(NearV(p.end, {0, 0.4f, 0.3f}, 1e-3f));
+    CHECK(Near(Dist(p.mid, a), Dist(b, a), 1e-4f) && Near(Dist(p.end, p.mid), Dist(c, b), 1e-3f));
+    // 曲げる向き (pole) の側に曲がる
+    CHECK(SolveTwoBone(a, b, c, {0, 0.3f, 0}, {0, 0, 1}).mid.z > 0.1f);
+    CHECK(SolveTwoBone(a, b, c, {0, 0.3f, 0}, {0, 0, -1}).mid.z < -0.1f);
+    // 届かない: まっすぐ伸ばす (長さは変えない)
+    const TwoBonePoints far = SolveTwoBone(a, b, c, {0, -5, 0}, {0, 0, 1});
+    CHECK(Near(Dist(far.end, a), Dist(b, a) + Dist(c, b), 1e-3f) && far.end.y < 0);
+}
+
+RM_TEST(Anim3d_ApplyTwoBoneAndLookAt) {
+    const Skeleton s = Leg();
+    Pose pose = RestPose(s);
+    std::vector<Mat4> model;
+    // 足首を前と上へ: 着いて、膝は前に曲がる
+    CHECK(ApplyTwoBone(pose, s, model, 3, {0.1f, 0.3f, 0.2f}, {0, 0, 1}, 1.f));
+    CHECK(NearV(BonePosition(model, 3), {0.1f, 0.3f, 0.2f}, 2e-3f));
+    CHECK(BonePosition(model, 2).z > 0.1f);
+    // 重み 0: 変わらない。骨が足りない (腿は親の親が無い): false
+    Pose still = RestPose(s);
+    CHECK(!ApplyTwoBone(still, s, model, 3, {0, 0.5f, 0}, {0, 0, 1}, 0.f));
+    CHECK(!ApplyTwoBone(still, s, model, 1, {0, 0.5f, 0}, {0, 0, 1}, 1.f));
+    for (size_t i = 0; i < still.size(); ++i) CHECK(SameRotation(still[i].r, s.bones[i].rest.r));
+    // 向ける: 前 (+Z) を右 (+X) へ。上限 30 度なら 30 度だけ
+    Pose head = RestPose(s);
+    const Vec3 fwd = RestForward(s, 0);
+    CHECK(NearV(fwd, {0, 0, 1}));
+    CHECK(ApplyLookAt(head, s, model, 0, fwd, {5, 1, 0}, 3.f, 1.f));
+    CHECK(NearV(QuatRotate(head[0].r, {0, 0, 1}), {1, 0, 0}, 1e-3f));
+    head = RestPose(s);
+    ApplyLookAt(head, s, model, 0, fwd, {5, 1, 0}, 30.f * kPi / 180.f, 1.f);
+    CHECK(Near(std::acos(std::clamp(Dot(QuatRotate(head[0].r, {0, 0, 1}), {0, 0, 1}), -1.f, 1.f)), 30.f * kPi / 180.f, 1e-3f));
+    // 足を面に: 上を傾いた法線へ (上限まで)
+    Pose foot = RestPose(s);
+    const Vec3 n = Normalize({0, 1, 1});
+    CHECK(AlignToNormal(foot, s, model, 3, n, 1.f, 1.f));
+    CHECK(NearV(TransformDirection(model[3], {0, 1, 0}), n, 1e-3f));
 }

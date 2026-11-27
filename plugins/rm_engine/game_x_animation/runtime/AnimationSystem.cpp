@@ -8,6 +8,8 @@
 #include "rm_engine/game_x_3d/runtime/ScriptTransform3D.h"
 #include "rm_engine/game_x_animation/runtime/AnimatorLogic.h"
 #include "rm_engine/game_x_animation/runtime/AnimatorRun.h"
+#include "rm_engine/game_x_animation/runtime/AnimatorIk.h"
+#include "rm_engine/game_x_animation/runtime/GroundProbe.h"
 #include "rm_engine/game_x_animation/runtime/RootMotionSink.h"
 #include "rm_engine/space3d/runtime/MeshBake.h"
 #include "rm_engine/space3d/runtime/View.h"
@@ -186,7 +188,31 @@ void RunAnimation(game_production::SystemContext& ctx) {
         }
         StepAnimatorRules(run, a, ctx.dt);
         fired.clear();
-        StepAnimator(run, a, ctx.dt, fired, &space3d::NextPoseVersion);
+        // IK (部品「IK」が同じエンティティにあれば): 体とレイヤーの後、行列にする前。
+        PoseHook post;
+        if (const Component* ikc = e.FindComponent(reflect::TypeOf<AnimatorIk>().name); ikc && ikc->Known()) {
+            const AnimatorIk& ik = *static_cast<const AnimatorIk*>(ikc->value.Get());
+            if (!ik.chains.empty()) {
+                IkWorld world;
+                world.entityWorld = game_x_3d::WorldMatrixOf(ctx.scene, e.data.id);
+                world.dt = ctx.dt;
+                const int self = e.data.id;
+                if (ctx.registry) {
+                    for (const auto& g : ctx.registry->Contributions<GroundProbeInfo>(kGroundPoint)) {
+                        if (!g.item->cast) continue;
+                        auto cast = g.item->cast;
+                        world.ground = [&ctx, cast, self](Vec3 from, Vec3 dir, float max) { return cast(ctx.scene, from, dir, max, self); };
+                        break;
+                    }
+                }
+                world.entity = [&ctx](const EntityRef& target, Vec3 offset) -> std::optional<Vec3> {
+                    if (target.id == 0 || target.id > 0x7fffffffu || !ctx.scene.Find(static_cast<int>(target.id))) return std::nullopt;
+                    return space3d::TransformPoint(game_x_3d::WorldMatrixOf(ctx.scene, static_cast<int>(target.id)), offset);
+                };
+                post = [&run, &ik, world](animation3d::Pose& pose) mutable { return ApplyAnimatorIk(run, ik, world, pose); };
+            }
+        }
+        StepAnimator(run, a, ctx.dt, fired, &space3d::NextPoseVersion, &post);
         ApplyRootMotion(ctx, e, a, run);  // (イベントの OnEvent はこの後: 足音は動いた後の位置で鳴る)
         if (ctx.events) {
             for (const space3d::ClipEvent* ev : fired) ctx.events->push_back({e.data.id, ev->name, ev->number, ev->text, e.data.id});

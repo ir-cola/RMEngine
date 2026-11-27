@@ -43,6 +43,7 @@ struct ClipList {
     bool ok = false;      // ... そして読めた
     std::vector<std::pair<std::string, float>> clips;  // 名前と長さ (秒)
     std::vector<std::string> bones;                    // 骨の名前 (親が先)
+    std::vector<int> parents;                          // bones と同じ並び: 親の番号 (bones の。-1: 根)
 };
 
 const ClipList* ClipsOf(editor::SoftwareHost& host, const AssetRef& ref) {
@@ -66,14 +67,22 @@ const ClipList* ClipsOf(editor::SoftwareHost& host, const AssetRef& ref) {
     l.time = time;
     l.clips.clear();
     l.bones.clear();
+    l.parents.clear();
     std::string err;  // (読めないことはシーンビューがコンソールに出す)
     const auto mesh = space3d::LoadMeshFile(file, &err);
     l.ok = mesh.has_value();
     if (mesh) {
         for (const space3d::Clip& c : mesh->clips) l.clips.emplace_back(c.name, c.duration);
         if (mesh->skin) {
-            for (const space3d::Bone& b : mesh->skin->skeleton.bones) {
-                if (b.name != space3d::kStaticBoneName) l.bones.push_back(b.name);
+            // (「(骨の外)」は出さない。番号は詰めた並びで引き直す)
+            const auto& bones = mesh->skin->skeleton.bones;
+            std::vector<int> at(bones.size(), -1);
+            for (size_t i = 0; i < bones.size(); ++i) {
+                if (bones[i].name == space3d::kStaticBoneName) continue;
+                at[i] = static_cast<int>(l.bones.size());
+                l.bones.push_back(bones[i].name);
+                const int p = bones[i].parent;
+                l.parents.push_back(p >= 0 && static_cast<size_t>(p) < i ? at[static_cast<size_t>(p)] : -1);
             }
         }
     }
@@ -130,6 +139,36 @@ std::optional<std::vector<editor::inspector::Choice>> BoneChoices(editor::Softwa
         return out;
     }
     return std::nullopt;
+}
+
+// 骨の木 (深さつき)。
+std::vector<BoneRow> BoneRows(const ClipList& list) {
+    std::vector<BoneRow> out;
+    for (size_t i = 0; i < list.bones.size(); ++i) {
+        const int p = i < list.parents.size() ? list.parents[i] : -1;
+        out.push_back({list.bones[i], p, p >= 0 && static_cast<size_t>(p) < out.size() ? out[static_cast<size_t>(p)].depth + 1 : 0});
+    }
+    return out;
+}
+
+// 骨の木を、深さで字下げした選択肢に (T1: ▾ で骨の木。docs/ANIMATION.md 段階 6)。先頭は `none`。
+std::vector<editor::inspector::Choice> BoneTreeChoices(const ClipList& list, std::wstring none) {
+    std::vector<editor::inspector::Choice> out;
+    out.push_back({"", std::move(none)});
+    for (const BoneRow& b : BoneRows(list)) out.push_back({b.name, BoneTreeLabel(b)});
+    return out;
+}
+
+// IK の鎖の骨と腰の骨: 同じエンティティのメッシュのモデルの骨の木。モデルが無い・読めないときは文字の欄。
+std::optional<std::vector<editor::inspector::Choice>> IkChoices(editor::SoftwareHost& host, const game_production::Scene& scene, int entity,
+                                                                const reflect::FieldPath& path) {
+    const bool chainBone = path.size() == 3 && path[0] == FieldOf<AnimatorIk>("chains") && path[2] == FieldOf<IkChain>("bone");
+    const bool pelvis = path.size() == 1 && path[0] == FieldOf<AnimatorIk>("pelvis");
+    if (!chainBone && !pelvis) return std::nullopt;
+    const game_production::SceneEntity* e = scene.Find(entity);
+    const ClipList* list = e ? ClipsOf(host, ModelOn(*e)) : nullptr;
+    if (!list || list->bones.empty()) return std::nullopt;
+    return BoneTreeChoices(*list, pelvis ? Tr(L"(下げない)") : Tr(L"(選んでいない)"));
 }
 
 // --- シーンビューのプレビュー --------------------------------------------------------------
@@ -209,6 +248,18 @@ std::vector<std::string> ModelBoneNames(editor::SoftwareHost& host, const game_p
     return list ? list->bones : std::vector<std::string>{};
 }
 
+std::vector<BoneRow> ModelBoneTree(editor::SoftwareHost& host, const game_production::Scene& scene, int entity) {
+    const game_production::SceneEntity* e = scene.Find(entity);
+    const ClipList* list = e ? ClipsOf(host, ModelOn(*e)) : nullptr;
+    return list ? BoneRows(*list) : std::vector<BoneRow>{};
+}
+
+std::wstring BoneTreeLabel(const BoneRow& row) {
+    std::wstring out;
+    for (int k = 0; k < row.depth; ++k) out += L"\u3000";
+    return out + Utf8ToWide(row.name);
+}
+
 void RegisterEditor(editor::PluginRegistry& registry) {
     // アニメーション タブ: 選んだアニメーターの状態とルール (.rmanim) を、ルールの並びで作る。
     static const game_production::ViewPanelInfo kTab{"animation", editor::TrKey(L"アニメーション"), &CreateAnimationTab};
@@ -219,6 +270,9 @@ void RegisterEditor(editor::PluginRegistry& registry) {
     // 骨に付ける の骨の欄: 祖先のアニメーターのモデルの骨から選ぶ。
     static const game_production::ComponentLook kAttachLook{.type = &reflect::TypeOf<BoneAttach>, .choices = &BoneChoices};
     registry.Contribute(game_production::kComponentLookPoint, kAttachLook);
+    // IK の鎖の骨・腰の骨: 同じエンティティのモデルの骨の木から。
+    static const game_production::ComponentLook kIkLook{.type = &reflect::TypeOf<AnimatorIk>, .choices = &IkChoices};
+    registry.Contribute(game_production::kComponentLookPoint, kIkLook);
     // 止まっているシーンビューで、選んだアニメーターを流して見る。
     static const game_x_3d::SceneOverlayInfo kOverlay{&PreviewArea, &DrawPreviewBar};
     registry.Contribute(game_x_3d::kSceneOverlayPoint, kOverlay);

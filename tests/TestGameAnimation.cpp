@@ -11,6 +11,7 @@
 #include "rm_engine/game_x_animation/runtime/AnimatorPoser.h"
 #include "rm_engine/game_x_animation/runtime/AnimatorRun.h"
 #include "rm_engine/game_x_animation/runtime/AnimationSystem.h"
+#include "rm_engine/game_x_animation/runtime/AnimatorIk.h"
 #include "rm_engine/game_x_animation/runtime/RootMotionSink.h"
 #include "rm_engine/animation3d/runtime/RootMotion.h"
 #include "rm_engine/space3d/runtime/View.h"
@@ -699,4 +700,120 @@ RM_TEST(GameAnim_LayerWeightFromScript) {
     CHECK(Near(LayerWeightOf(run, "上半身"), 1.f));
     SetLayerWeight(run, "上半身", -1.f);  // 外す
     CHECK(run.layerWeights.empty() && Near(LayerWeightOf(run, "上半身"), 0.f));
+}
+
+// --- IK (docs/ANIMATION.md 7-2-1。AnimatorIk.h) ---
+
+namespace {
+
+// 腰 → 腿 → 膝 → 足首 (左右 2 本)。足首は高さ 0.1。
+game_x_3d::SkinnedModel Legs() {
+    auto skin = std::make_shared<space3d::SkinData>();
+    auto bone = [](const char* name, int parent, Vec3 t) {
+        space3d::Bone b;
+        b.name = name;
+        b.parent = parent;
+        b.rest.t = t;
+        return b;
+    };
+    skin->skeleton.bones = {bone("Hips", -1, {0, 1, 0}),         bone("LThigh", 0, {-0.1f, 0, 0}), bone("LKnee", 1, {0, -0.45f, 0}),
+                            bone("LFoot", 2, {0, -0.45f, 0}),    bone("RThigh", 0, {0.1f, 0, 0}),  bone("RKnee", 4, {0, -0.45f, 0}),
+                            bone("RFoot", 5, {0, -0.45f, 0}),    bone("Head", 0, {0, 0.6f, 0})};
+    skin->inverseBind.assign(skin->skeleton.bones.size(), space3d::Mat4{});
+    auto clips = std::make_shared<std::vector<space3d::Clip>>();
+    clips->push_back(NamedClip("Stand", 1));
+    return {skin, clips};
+}
+
+IkChain Foot(const char* name, const char* bone) {
+    IkChain c;
+    c.name = name;
+    c.bone = bone;
+    c.goal = IkGoal::Ground;
+    return c;
+}
+
+Vec3 Pos(const std::vector<space3d::Mat4>& m, int bone) { return {m[bone].m[3][0], m[bone].m[3][1], m[bone].m[3][2]}; }
+
+}  // namespace
+
+RM_TEST(GameAnim_IkFeetOnStepsAndPelvis) {
+    const game_x_3d::SkinnedModel m = Legs();
+    AnimatorRun run;
+    BindModel(run, m.skin, m.clips);
+    AnimatorIk ik;
+    ik.chains = {Foot("左足", "LFoot"), Foot("右足", "RFoot")};
+    ik.pelvis = "Hips";
+    IkWorld world;
+    world.dt = 1.f;  // (ならさずに、すぐ目標へ)
+    // 左の下は段 (高さ 0.2)、右の下は穴 (高さ -0.15)
+    world.ground = [](Vec3 from, Vec3, float) -> std::optional<GroundHit> { return GroundHit{{from.x, from.x < 0 ? 0.2f : -0.15f, from.z}, {0, 1, 0}}; };
+    animation3d::Pose pose = animation3d::RestPose(m.skin->skeleton);
+    CHECK(ApplyAnimatorIk(run, ik, world, pose));
+    std::vector<space3d::Mat4> model;
+    animation3d::ModelMatrices(m.skin->skeleton, pose, model);
+    CHECK(Near(Pos(model, 3).y, 0.3f, 2e-3f));    // 左の足首: 段の分だけ上がる
+    CHECK(Near(Pos(model, 6).y, -0.05f, 2e-3f));  // 右の足首: 穴の分だけ下がる
+    CHECK(Near(Pos(model, 0).y, 0.85f, 1e-3f));   // 腰は低い方の足の分 (0.15) 下がる
+    // 平らな地面: 何も変わらない
+    world.ground = [](Vec3 from, Vec3, float) -> std::optional<GroundHit> { return GroundHit{{from.x, 0.f, from.z}, {0, 1, 0}}; };
+    AnimatorRun flat;
+    BindModel(flat, m.skin, m.clips);
+    pose = animation3d::RestPose(m.skin->skeleton);
+    ApplyAnimatorIk(flat, ik, world, pose);
+    animation3d::ModelMatrices(m.skin->skeleton, pose, model);
+    CHECK(Near(Pos(model, 3).y, 0.1f, 1e-3f) && Near(Pos(model, 0).y, 1.f, 1e-3f));
+    // 地面が分からない (物理が無い): 何もしない
+    world.ground = nullptr;
+    pose = animation3d::RestPose(m.skin->skeleton);
+    CHECK(!ApplyAnimatorIk(flat, ik, world, pose));
+    // 重み 0 (スクリプトの SetIkWeight): かけない
+    world.ground = [](Vec3 from, Vec3, float) -> std::optional<GroundHit> { return GroundHit{{from.x, 0.3f, from.z}, {0, 1, 0}}; };
+    SetIkWeight(flat, "左足", 0.f);
+    SetIkWeight(flat, "右足", 0.f);
+    pose = animation3d::RestPose(m.skin->skeleton);
+    CHECK(!ApplyAnimatorIk(flat, ik, world, pose));
+}
+
+RM_TEST(GameAnim_IkScriptAndEntityTargets) {
+    const game_x_3d::SkinnedModel m = Legs();
+    AnimatorRun run;
+    BindModel(run, m.skin, m.clips);
+    AnimatorIk ik;
+    IkChain hand;
+    hand.name = "手";
+    hand.bone = "RFoot";  // (2 本の骨なら何でも)
+    hand.goal = IkGoal::Script;
+    IkChain look;
+    look.name = "頭";
+    look.kind = IkKind::LookAt;
+    look.bone = "Head";
+    look.goal = IkGoal::Script;
+    look.maxAngle = 90;
+    ik.chains = {hand, look};
+    IkWorld world;
+    space3d::Transform at;
+    at.position = {10, 0, 0};  // エンティティはワールドの x = 10
+    world.entityWorld = space3d::LocalMatrix(at);
+    animation3d::Pose pose = animation3d::RestPose(m.skin->skeleton);
+    CHECK(!ApplyAnimatorIk(run, ik, world, pose));  // 目標がまだ無い
+    SetIkTarget(run, "手", {10.1f, 0.4f, 0.3f}, 1.f);  // ワールド
+    SetLookAt(run, {10, 1.6f, 5}, 1.f);
+    CHECK(ApplyAnimatorIk(run, ik, world, pose));
+    std::vector<space3d::Mat4> model;
+    animation3d::ModelMatrices(m.skin->skeleton, pose, model);
+    CHECK(Near(Pos(model, 6).x, 0.1f, 2e-3f) && Near(Pos(model, 6).y, 0.4f, 2e-3f) && Near(Pos(model, 6).z, 0.3f, 2e-3f));
+    CHECK(Near(IkWeight(run, look), 1.f));
+    // 目標がエンティティ: その位置 (ずれはそのエンティティの向きで)
+    ik.chains[0].goal = IkGoal::Entity;
+    ik.chains[0].target.id = 7;
+    ik.chains[0].offset = {0, 0.1f, 0};
+    world.entity = [](const EntityRef& t, Vec3 offset) -> std::optional<Vec3> {
+        if (t.id != 7) return std::nullopt;
+        return Vec3{10.1f + offset.x, 0.3f + offset.y, 0.2f + offset.z};
+    };
+    pose = animation3d::RestPose(m.skin->skeleton);
+    CHECK(ApplyAnimatorIk(run, ik, world, pose));
+    animation3d::ModelMatrices(m.skin->skeleton, pose, model);
+    CHECK(Near(Pos(model, 6).y, 0.4f, 2e-3f) && Near(Pos(model, 6).z, 0.2f, 2e-3f));
 }

@@ -17,5 +17,14 @@ void RegisterEditor(editor::PluginRegistry& registry);
 std::vector<std::string> ModelClipNames(editor::SoftwareHost& host, const game_production::Scene& scene, int entity);
 // 同じモデルの骨の名前 (親が先)。レイヤーのマスクを選ぶ。
 std::vector<std::string> ModelBoneNames(editor::SoftwareHost& host, const game_production::Scene& scene, int entity);
+// 同じモデルの骨の木 (親が先。「(骨の外)」は入らない)。▾ の骨の木 (T1) が使う。
+struct BoneRow {
+    std::string name;
+    int parent = -1;  // この並びの番号 (-1: 根)
+    int depth = 0;    // 根が 0
+};
+std::vector<BoneRow> ModelBoneTree(editor::SoftwareHost& host, const game_production::Scene& scene, int entity);
+// 骨の木の 1 行の見せ方 (深さだけ字下げした名前)。
+std::wstring BoneTreeLabel(const BoneRow& row);
 
 }  // namespace rm::game_x_animation

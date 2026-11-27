@@ -5,6 +5,7 @@
 #include "rm_engine/game_x_animation/runtime/ScriptAnimator.h"
 
 #include "rm_engine/game_x_3d/runtime/ScriptTransform3D.h"
+#include "rm_engine/game_x_animation/runtime/AnimatorIk.h"
 #include "rm_engine/game_x_animation/runtime/AnimatorLogic.h"
 #include "rm_engine/game_x_animation/runtime/AnimatorRun.h"
 #include "rm_engine/game_x_animation/runtime/sdk/RMAnimAbi.h"
@@ -176,6 +177,22 @@ float LayerWeightOfApi(void* ctx, uint64_t id, const char* layer) {
 }
 constexpr RmAnimRootApi kRoot{&SetRootUse, &RootUse, &RootDeltaOf, &RootTurnOf, &SetLayerWeightOf, &LayerWeightOfApi};
 
+// IK。
+Vec3 Point(const float* p) { return p ? Vec3{p[0], p[1], p[2]} : Vec3{0, 0, 0}; }
+void SetIkTargetOf(void* ctx, uint64_t id, const char* chain, const float* position, float weight) {
+    const Found f = AnimatorOf(ctx, id);
+    if (f.a) SetIkTarget(RunOf(*f.a, f.id), chain ? chain : "", Point(position), weight);
+}
+void SetIkWeightOf(void* ctx, uint64_t id, const char* chain, float weight) {
+    const Found f = AnimatorOf(ctx, id);
+    if (f.a) SetIkWeight(RunOf(*f.a, f.id), chain ? chain : "", weight);
+}
+void LookAtOf(void* ctx, uint64_t id, const float* position, float weight) {
+    const Found f = AnimatorOf(ctx, id);
+    if (f.a) SetLookAt(RunOf(*f.a, f.id), Point(position), weight);
+}
+constexpr RmAnimIkApi kIk{&SetIkTargetOf, &SetIkWeightOf, &LookAtOf};
+
 constexpr RmAnimApi kTable{&Has,   &Play, &HasClip, &ClipName, &SetPaused, &Paused, &Speed,      &SetSpeed,
                            &Loop,  &SetLoop, &Time, &SetTime,  &ClipDuration, &ClipEnded, &Bone};
 
@@ -193,6 +210,11 @@ const game_production::ScriptApiPart& ScriptAnimatorRulesPart() {
 
 const game_production::ScriptApiPart& ScriptAnimatorRootPart() {
     static const game_production::ScriptApiPart part{RM_PART_ANIM_ROOT, RM_PART_ANIM_ROOT_VERSION, &kRoot};
+    return part;
+}
+
+const game_production::ScriptApiPart& ScriptAnimatorIkPart() {
+    static const game_production::ScriptApiPart part{RM_PART_ANIM_IK, RM_PART_ANIM_IK_VERSION, &kIk};
     return part;
 }
 

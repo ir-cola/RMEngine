@@ -64,7 +64,8 @@ void BindModel(AnimatorRun& run, std::shared_ptr<const space3d::SkinData> skin, 
     run.dirty = false;
 }
 
-void StepAnimator(AnimatorRun& run, const Animator& a, float dt, std::vector<const space3d::ClipEvent*>& fired, uint64_t (*next)()) {
+void StepAnimator(AnimatorRun& run, const Animator& a, float dt, std::vector<const space3d::ClipEvent*>& fired, uint64_t (*next)(),
+                  const PoseHook* post) {
     run.moving = false;
     run.root = {};
     run.rootActive = false;
@@ -107,6 +108,8 @@ void StepAnimator(AnimatorRun& run, const Animator& a, float dt, std::vector<con
         layered = layered || (l.weight > 0 && l.player.ClipIndex() >= 0);
     }
     if (layered || !run.blend.empty()) changed = true;  // (混ぜている・重ねている間は、重みが変わるので毎フレーム)
+    const bool hooked = post && *post;
+    if (hooked) changed = true;  // (IK・揺れは目標や地面で毎フレーム変わる)
     if (changed || run.version == 0) {
         const animation3d::Pose& base = p.EvaluatePose(run.skin->skeleton);
         (void)base;
@@ -120,6 +123,7 @@ void StepAnimator(AnimatorRun& run, const Animator& a, float dt, std::vector<con
                 animation3d::OverlayPose(p.MutablePose(), pose, l.weight, l.mask);
             }
         }
+        if (hooked) (*post)(p.MutablePose());
         p.FinishPose(*run.skin, run.bones);
         run.version = next();
     }

@@ -112,8 +112,9 @@ struct Block {
     // これらのドロップダウン。選んだ行が動く (呼んだ側が履歴に積む)。空: 行なし。
     std::wstring presetLabel;
     std::vector<w::Action> presets;
-    // 文字のフィールド (配列の要素でないもの) の選択肢: `path` のフィールドに値を返すと、文字の欄の
-    // 代わりにそれらのドロップダウンを出す。nullopt / null: ふつうの文字の欄。描くたびに尋ねる。
+    // 文字のフィールドの選択肢: `path` のフィールドに値を返すと、文字の欄の代わりにそれらのドロップダウンを出す。
+    // nullopt / null: ふつうの文字の欄。描くたびに尋ねる。構造体の配列の要素の中のフィールドは、`path` が
+    // 「配列のフィールドの道 + 要素の番号 + 要素の中の道」(IK の鎖の骨: {chains, 2, bone})。
     std::function<std::optional<std::vector<Choice>>(const reflect::FieldPath& path)> choices;
     // 欄の代わりに、ブロックが自分で描く中身 (`type` は null。モデルのクリップの帯): `customHeight` が幅に
     // 対する高さ、`customDraw` がその四角 (見出しと注記の下) に描く。インスペクターは見出し・たたむ・

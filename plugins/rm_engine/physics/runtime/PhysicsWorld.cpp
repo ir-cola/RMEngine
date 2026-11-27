@@ -222,12 +222,6 @@ private:
     std::set<std::pair<uint32_t, uint32_t>> began_, ended_;
 };
 
-// レイはトリガーを飛ばす。
-class NotSensors final : public JPH::BodyFilter {
-public:
-    bool ShouldCollideLocked(const JPH::Body& body) const override { return !body.IsSensor(); }
-};
-
 }  // namespace
 
 // ------------------------------------------------------------------------------------------------
@@ -833,15 +827,35 @@ bool PhysicsWorld::SetVelocity(Scene& scene, int entity, Vec3 velocity) {
     return true;
 }
 
-std::optional<PhysicsWorld::RayHit> PhysicsWorld::Raycast(Vec3 origin, Vec3 direction, float maxDistance) const {
+namespace {
+
+// レイはトリガーと、除くエンティティ (自分のキャラクターの体) の物体を飛ばす。
+class RayFilter final : public JPH::BodyFilter {
+public:
+    RayFilter(const std::unordered_map<uint32_t, int>& owner, int ignore) : owner_(owner), ignore_(ignore) {}
+    bool ShouldCollide(const JPH::BodyID& id) const override {
+        if (ignore_ == 0) return true;
+        const auto o = owner_.find(Key(id));
+        return o == owner_.end() || o->second != ignore_;
+    }
+    bool ShouldCollideLocked(const JPH::Body& body) const override { return !body.IsSensor(); }
+
+private:
+    const std::unordered_map<uint32_t, int>& owner_;
+    int ignore_;
+};
+
+}  // namespace
+
+std::optional<PhysicsWorld::RayHit> PhysicsWorld::Raycast(Vec3 origin, Vec3 direction, float maxDistance, int ignoreEntity) const {
     const Impl& w = *impl_;
     const Vec3 d = space3d::Normalize(direction);
     if (space3d::Length(d) == 0 || !(maxDistance > 0)) return std::nullopt;
     const float reach = std::min(maxDistance, 1e6f);
     const JPH::RRayCast ray(J(origin), J(d) * reach);
     JPH::RayCastResult hit;
-    const NotSensors notSensors;
-    if (!w.system.GetNarrowPhaseQuery().CastRay(ray, hit, {}, {}, notSensors)) return std::nullopt;
+    const RayFilter filter(w.owner, ignoreEntity);
+    if (!w.system.GetNarrowPhaseQuery().CastRay(ray, hit, {}, {}, filter)) return std::nullopt;
     RayHit out;
     const JPH::RVec3 point = ray.GetPointOnRay(hit.mFraction);
     out.point = R(point);

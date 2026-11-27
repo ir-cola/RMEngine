@@ -75,5 +75,5 @@ plugins/
 | `rm_engine` / `navigation_x_3d` (ナビ × 3D) | つなぎ。「メッシュ (3D モデル)」の形を焼く物に (口 `source`) |
 | `rm_engine` / `navigation_x_physics` (ナビ × 物理) | つなぎ。動かないコライダーを焼く物に・動く剛体とキャラクターは焼かない・キャラクターで歩かせる (口 `mover`) |
 | `rm_engine` / `weather_x_physics` (天候 × 物理) | つなぎ。前提 = 天候・物理 (ほか)。どの物が動くか (キャラクター・動かない ではない剛体) を天候に言う: そのメッシュは雪に足跡を残す (天候の口 `rm_engine.weather.movers`)。雨・雪が当たるのは見えているメッシュで、コライダーではない (2026-11-25 から) |
-| `rm_engine` / `animation_x_physics` (アニメーション × 物理) | つなぎ (ゲーム制作 × アニメーションの)。前提 = ゲーム制作 × アニメーション・物理 (ほか)。アニメーターのルートモーションを、同じエンティティの物理のキャラクターの速さにする (ゲーム制作 × アニメーションの口 `rm_engine.game_x_animation.root_motion`。横だけ)。設計 [docs/ANIMATION.md](../docs/ANIMATION.md) 7-1 |
+| `rm_engine` / `animation_x_physics` (アニメーション × 物理) | つなぎ (ゲーム制作 × アニメーションの)。前提 = ゲーム制作 × アニメーション・物理 (ほか)。アニメーターのルートモーションを、同じエンティティの物理のキャラクターの速さにする (ゲーム制作 × アニメーションの口 `rm_engine.game_x_animation.root_motion`。横だけ)。足の IK の地面を物理の光線で答える (口 `rm_engine.game_x_animation.ground`。自分のキャラクターには当たらない)。設計 [docs/ANIMATION.md](../docs/ANIMATION.md) 7-1 |
 | `rm_engine` / `particles_x_physics` (パーティクル × 物理) | つなぎ。前提 = ゲーム制作 × パーティクル・物理 (ほか)。物理のコライダー (箱・球・カプセル。トリガーとメッシュは除く) とキャラクターを、粒が当たる形にして渡す (ゲーム制作 × パーティクルの口 `rm_engine.game_x_particles.collision_shapes`) |

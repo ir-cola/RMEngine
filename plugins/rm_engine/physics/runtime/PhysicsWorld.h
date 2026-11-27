@@ -48,8 +48,9 @@ public:
         float distance = 0;
     };
     // `origin` から `direction` の向きへ、最大 `maxDistance` の距離までのレイが最初に当たるもの
-    // (トリガーは除く)。キャラクターにも当たる (その物体に)。
-    std::optional<RayHit> Raycast(Vec3 origin, Vec3 direction, float maxDistance) const;
+    // (トリガーは除く)。キャラクターにも当たる (その物体に)。`ignoreEntity` (0 以外) のエンティティの物体には当たらない
+    // (足の IK が自分のキャラクターの体に当たらないように)。
+    std::optional<RayHit> Raycast(Vec3 origin, Vec3 direction, float maxDistance, int ignoreEntity = 0) const;
 
     // キャラクター (キャラクター): `velocity` (その水平の成分) で、別の指示があるまで歩く; 地面にいる
     // 時にジャンプする; 立っている所。

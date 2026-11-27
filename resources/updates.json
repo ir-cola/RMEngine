@@ -3,6 +3,24 @@
   "format": 1,
   "updates": [
     {
+      "version": "0.0.38",
+      "date": "2026-11-27",
+      "items": [
+        {
+          "ja": "骨のアニメーションに IK: 新しい部品「IK」で、足を坂や段に合わせる (物理の光線)・手をエンティティへ届かせる・顔を向ける",
+          "en": "IK for bone animation: the new IK component fits feet to slopes and steps (physics rays), reaches hands to an entity and turns heads"
+        },
+        {
+          "ja": "骨を選ぶ ▾ が骨の木の形に (IK の骨・レイヤーのマスク)。マスクはチェックで入れる / 外す",
+          "en": "Bone dropdowns now show the bone tree (IK bones, layer masks). Masks are checked on and off in the tree"
+        },
+        {
+          "ja": "スクリプトの rm::Animator に SetIkTarget・SetIkWeight・LookAt",
+          "en": "Scripts: rm::Animator gains SetIkTarget, SetIkWeight and LookAt"
+        }
+      ]
+    },
+    {
       "version": "0.0.37",
       "date": "2026-11-26",
       "items": [

@@ -1296,10 +1296,20 @@ plugins/            ソフトはプラグインで足す (いまは「ゲーム�
 - **なぜそれか** — 足が滑らない歩き・クリップどおりの踏み込みは、アニメーションを作った人の動きをそのまま使うのが一番。速さをスクリプトで合わせるより正確。口にしたので、物理の無いゲームにも、後でナビゲーション (動く者を動かす人は 1 人だけ: `DrivenByRootMotion`) にも同じ道を使える
 - **どこ** — `plugins/rm_engine/animation3d/runtime/RootMotion.*`・`Player.*` (`RootStep` / `stripRoot`)・`space3d/runtime/Skeleton.h` (`ClipRootMotion`)・`ClipSettings.*`・`MeshBake.*` (`ROOT`。形式 3)・`game_x_animation/runtime/RootMotionSink.h`・`AnimationSystem.cpp` (`ApplyRootMotion`)・`animation_x_physics/runtime/Register.cpp`・`game_x_animation/editor/TabPreview.*`・`animation3d/editor/ClipStrip.cpp`、`tests/TestAnimation3d.cpp`・`TestGameAnimation.cpp`・`TestAnimationPhysics.cpp`・`TestMeshBake.cpp`・`TestClipEvents.cpp`
 
+### IK: 2 本の骨を余弦定理で解く・回転を骨の空間へ戻す・足を坂に (光線と高さのならし) (2026-11-27)
+
+- **何か** — IK (逆運動学) は、先の骨 (足首・手首) を目標の場所へ届かせるために、手前の骨の回転を決める計算。**2 本の骨**は形が三角形になるので、**余弦定理** (3 辺の長さから角度: cos A = (b² + c² − a²) / 2bc) で根元の角度が 1 回で出る。曲がる平面は「根元 → 目標の線」と「曲げる向き (膝は前)」で決める。届かないときはまっすぐ伸ばし、近すぎるときは曲げられる所まで。求めた位置へ向ける回転は「a の向きを b の向きへ回す一番短い回転」(四元数: 軸 = a × b、w = 1 + a · b を長さ 1 に)
+- **骨の空間へ戻す** — 解いた回転はモデルの空間のもの。姿勢は親の空間で持つので、親の回転 P で「P⁻¹ · 回転 · P · 今の回転」として骨の回転に戻す (子の骨はそのまま付いて行く)。**向ける** (顔) は、休みの姿勢で前 (+Z) を向いていた向きを骨の空間で覚えておき、それを目標へ回す (角度に上限)
+- **足を坂に** — 足首の上から下へ**物理の光線** (自分のキャラクターの体には当たらないように、Jolt の BodyFilter で除く) を打ち、当たった高さとエンティティの足元の差だけ足首を上下させる (平らなら変わらない)。低い方の足が届くように腰を下げ、足の上を面の法線へ 30 度まで傾ける。高さの変わりは 0.1 秒でならす (光線の当たりが変わってもがたつかない)
+- **なぜそれか** — 2 本の骨は反復 (CCD・FABRIK) が要らず、1 回で正確に解けて速い。地面は物理の口にしたので、物理の無いゲームでも IK の部品は壊れない
+- **ついでに** — インスペクターのドロップダウンを**配列の要素の中**の欄でも出せるようにした (道 = 配列の欄 + 要素の番号 + 要素の中の欄)。IK の鎖の骨の ▾ がこれを使う
+- **どこ** — `plugins/rm_engine/animation3d/runtime/Ik.*`・`game_x_animation/runtime/AnimatorIk.*`・`GroundProbe.h`・`Animator.h` (`AnimatorIk`・`IkChain`)・`animation_x_physics/runtime/Register.cpp` (`CastGround`)・`physics/runtime/PhysicsWorld.*` (`Raycast` の除くエンティティ)・`src/editor/inspector/Inspector.cpp` (`choicePrefix`)、`tests/TestAnimation3d.cpp`・`TestGameAnimation.cpp`・`TestAnimationPhysics.cpp`
+
 ## 追記の記録
 
 | 日付 | 足したこと |
 |---|---|
+| 2026-11-27 | IK (2 本の骨を余弦定理で・回転を骨の空間へ戻す・足を坂に: 光線と高さのならし)・配列の要素の中のドロップダウン |
 | 2026-11-26 | ルートモーション (Y のひねりの分け方・ループの継ぎ目で区切って足す・止め絵の速さ・物理のキャラクターへの口)・タブの中のプレビュー |
 | 2026-11-26 | ナビメッシュを焼いて道を探す (Recast / Detour v1.6.0・ボクセル・領域・A*・ファネル・区画をスレッドに並べて同じバイト・形の指紋 FNV-1a) |
 | 2026-11-26 | 動くテーマの絵 (ピクセルシェーダーの背景・勾配ノイズと fBm とドメインワーピング・ディザ・頂点バッファなしの粒・足し算の合成・別のスレッドで D3DCompile・タイマーで約 30 fps) |

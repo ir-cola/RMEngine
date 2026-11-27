@@ -16,6 +16,9 @@ void RegisterRuntime(RuntimeRegistry& registry) {
     registry.Contribute(game_production::kComponentPoint, kAnimator);
     static const game_production::ComponentInfo kAttach{.type = &reflect::TypeOf<BoneAttach>, .folder = "3D"};
     registry.Contribute(game_production::kComponentPoint, kAttach);
+    // IK (アニメーターと同じエンティティ。足を坂に・手を物に・顔を向ける)。
+    static const game_production::ComponentInfo kIk{.type = &reflect::TypeOf<AnimatorIk>, .folder = "3D"};
+    registry.Contribute(game_production::kComponentPoint, kIk);
     // ゲームが動いている間: 進める (クリップのイベントも) → 骨に付ける (AnimationSystem.h)。
     static const game_production::SystemInfo kAnimation{"アニメーション", game_production::SystemPhase::Frame, 100, &RunAnimation};
     registry.Contribute(game_production::kSystemPoint, kAnimation);
@@ -28,6 +31,7 @@ void RegisterRuntime(RuntimeRegistry& registry) {
     registry.Contribute(game_production::kScriptApiPoint, ScriptAnimatorPart());
     registry.Contribute(game_production::kScriptApiPoint, ScriptAnimatorRulesPart());
     registry.Contribute(game_production::kScriptApiPoint, ScriptAnimatorRootPart());
+    registry.Contribute(game_production::kScriptApiPoint, ScriptAnimatorIkPart());
 }
 
 }  // namespace rm::game_x_animation

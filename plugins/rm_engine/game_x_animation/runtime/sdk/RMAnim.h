@@ -9,6 +9,7 @@
 //   rm::Quat head = anim.BoneRotation("Head");
 //   anim.SetRootMotion(rm::RootMotion::Script);   // ルートモーションを自分で: rm::Vec3 d = anim.RootDelta();
 //   anim.SetLayerWeight("上半身", 0.5f);          // レイヤーの重み (ルールより強い)
+//   anim.SetIkTarget("右手", cupPos);  anim.LookAt(enemyPos, 0.8f);   // IK (部品「IK」の鎖)
 //
 // クリップのイベント (モデルのインスペクターの「クリップ」の帯で置く) は、そのエンティティのスクリプトの
 // OnEvent に届く (送り手はエンジン):
@@ -155,6 +156,24 @@ public:
         return root_ ? root_->layerWeight(Api()->ctx, entity_.id, l.c_str()) : 0.0f;
     }
 
+    // --- IK (同じエンティティの部品「IK」の鎖。目標が「スクリプト」のもの) ---
+    // 鎖 `chain` の目標 (ワールド) と重み (0..1)。
+    void SetIkTarget(std::string_view chain, Vec3 position, float weight = 1.0f) const {
+        const std::string c(chain);
+        const float p[3] = {position.x, position.y, position.z};
+        if (ik_) ik_->setIkTarget(Api()->ctx, entity_.id, c.c_str(), p, weight);
+    }
+    // 重みだけ (階段で切るなど)。負の数: 部品の重みに戻す。
+    void SetIkWeight(std::string_view chain, float weight) const {
+        const std::string c(chain);
+        if (ik_) ik_->setIkWeight(Api()->ctx, entity_.id, c.c_str(), weight);
+    }
+    // 「向ける」の鎖すべてをその位置へ (重み 0: やめる)。
+    void LookAt(Vec3 position, float weight = 1.0f) const {
+        const float p[3] = {position.x, position.y, position.z};
+        if (ik_) ik_->lookAt(Api()->ctx, entity_.id, p, weight);
+    }
+
 private:
     bool Bone(std::string_view bone, float* p, float* r) const {
         const std::string b(bone);
@@ -169,6 +188,7 @@ private:
     const RmAnimApi* api_;
     const RmAnimRulesApi* rules_ = Part<RmAnimRulesApi>(RM_PART_ANIM_RULES, RM_PART_ANIM_RULES_VERSION);
     const RmAnimRootApi* root_ = Part<RmAnimRootApi>(RM_PART_ANIM_ROOT, RM_PART_ANIM_ROOT_VERSION);
+    const RmAnimIkApi* ik_ = Part<RmAnimIkApi>(RM_PART_ANIM_IK, RM_PART_ANIM_IK_VERSION);
 };
 
 }  // namespace rm

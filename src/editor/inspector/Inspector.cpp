@@ -55,6 +55,8 @@ struct Pass {
     bool menusOk = false;
     // 文字のフィールドの選択肢 (Block::choices)。
     const std::function<std::optional<std::vector<Choice>>(const reflect::FieldPath&)>* choices = nullptr;
+    // 配列の要素の中を描いている間: 選択肢に渡す道の頭 (配列のフィールドの道 + 要素の番号。外: 空)。
+    reflect::FieldPath choicePrefix;
 
     void Put(Edit e) {
         if (!wrap) {
@@ -590,9 +592,13 @@ void DrawArray(Pass& x, const TypeDesc& ownerType, const FieldDesc& f, const voi
             return e;
         };
         if (elemStruct) {
-            // 構造体: 要素の行の下にそのフィールド。
+            // 構造体: 要素の行の下にそのフィールド。選択肢には「配列の道 + 要素の番号 + 要素の中の道」を渡す。
             FieldPath inner;
+            const FieldPath outerPrefix = x.choicePrefix;
+            x.choicePrefix.insert(x.choicePrefix.end(), path.begin(), path.end());
+            x.choicePrefix.push_back(i);
             DrawStruct(x, *elemStruct, elem, {}, nullptr, inner, indent + 2 * kIndent);
+            x.choicePrefix = outerPrefix;
         } else {
             Spot s{f, ops.element, elem};
             s.enabled = enabled;
@@ -717,7 +723,11 @@ void DrawField(Pass& x, const TypeDesc& ownerType, const FieldDesc& f, size_t in
             // 単独の数: ラベルがドラッグのつまみ。
             if (f.value.type == FieldType::Int || f.value.type == FieldType::Float) s.scrub = labelR;
             s.editFor = editFor;
-            if (f.value.type == FieldType::String && !x.wrap && x.choices && *x.choices) s.choices = (*x.choices)(path);
+            if (f.value.type == FieldType::String && x.choices && *x.choices) {
+                FieldPath full = x.choicePrefix;
+                full.insert(full.end(), path.begin(), path.end());
+                s.choices = (*x.choices)(full);
+            }
             DrawValue(x, s);
             break;
         }

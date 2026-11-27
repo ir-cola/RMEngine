@@ -57,4 +57,39 @@ struct BoneAttach {
     RM_TRANSIENT() std::string told;  // 付けられないと知らせた理由 (同じことは 1 度だけ)
 };
 
+// --- IK (docs/ANIMATION.md 7-2-1)。骨の名前はモデルごとに違うので、.rmanim ではなく部品にする (6 章の 14) ---
+RM_ENUM(Label="IK の種類")
+enum class IkKind {
+    RM_ITEM(Label="2 本の骨") TwoBone,  // 先の骨 (足首・手首) を目標へ: 親 (膝・肘) と親の親 (腿・二の腕) を曲げる
+    RM_ITEM(Label="向ける") LookAt,     // 骨 (頭・首) の前を目標へ
+};
+RM_ENUM(Label="IK の目標")
+enum class IkGoal {
+    RM_ITEM(Label="地面") Ground,          // 足を坂に: 物理の光線で地面を探す (つなぎ アニメーション × 物理)
+    RM_ITEM(Label="エンティティ") Entity,  // 目標のエンティティの位置 (+ ずれ)
+    RM_ITEM(Label="スクリプト") Script,    // スクリプトの SetIkTarget / LookAt
+};
+
+RM_STRUCT(Label="IK の鎖")
+struct IkChain {
+    RM_PROPERTY(Edit, Label="名前", Tooltip="スクリプトが呼ぶ名前 (左足・右手・頭 …)") std::string name = "IK";
+    RM_PROPERTY(Edit, Label="種類", Tooltip="2 本の骨: 先の骨を目標へ届かせ、親と親の親を曲げます。向ける: 骨の前を目標へ向けます") IkKind kind = IkKind::TwoBone;
+    RM_PROPERTY(Edit, Label="骨", Tooltip="2 本の骨: 先の骨 (足首・手首)。向ける: 向ける骨 (頭・首)") std::string bone;
+    RM_PROPERTY(Edit, Label="曲げる向き", Tooltip="2 本の骨が曲がる向き (モデルの空間。膝は前 (0, 0, 1)・肘は後ろ (0, 0, -1))。0: 今の姿勢の曲がり方のまま") Vec3 pole{0, 0, 1};
+    RM_PROPERTY(Edit, Label="目標", Tooltip="地面: 足を坂や段に合わせます (物理の光線)。エンティティ: 下の欄のエンティティへ。スクリプト: スクリプトの SetIkTarget / LookAt") IkGoal goal = IkGoal::Ground;
+    RM_PROPERTY(Edit, Label="目標のエンティティ", Tooltip="目標が「エンティティ」のとき、その位置へ (下のずれを、そのエンティティの向きで足す)") EntityRef target;
+    RM_PROPERTY(Edit, Label="ずれ", Tooltip="目標からのずれ (目標のエンティティの向きで)") Vec3 offset{0, 0, 0};
+    RM_PROPERTY(Edit, Label="重み", Tooltip="0: IK を使わない (クリップのまま) … 1: 目標に合わせる", Min=0, Max=1, Step=0.05) float weight = 1;
+    RM_PROPERTY(Edit, Label="重みのパラメーター", Tooltip="書くと、状態とルール (.rmanim) のそのパラメーターの値 (0..1) を重みに掛けます (階段で切る・狙うときだけ)") std::string weightParam;
+    RM_PROPERTY(Edit, Label="足の高さ", Tooltip="地面のとき: 足首から足の裏まで (足首がこれより地面に近づかない)", Min=0, Step=0.01) float footHeight = 0.08f;
+    RM_PROPERTY(Edit, Label="回す上限 (度)", Tooltip="向ける: これより回しません。地面: 足を面に合わせて傾けるのは 30 度まで", Min=0, Max=180, Step=1) float maxAngle = 70;
+};
+
+RM_STRUCT(Label="IK")
+struct AnimatorIk {
+    RM_PROPERTY(Edit, Label="鎖", Tooltip="IK をかける骨の鎖 (足・手・頭 …)。同じエンティティのアニメーターの姿勢の上にかけます") std::vector<IkChain> chains;
+    RM_PROPERTY(Edit, Label="腰の骨", Tooltip="地面の鎖があるとき、低い方の足が届くように下げる骨 (空: 下げない)") std::string pelvis;
+    RM_PROPERTY(Edit, Label="腰を下げる上限", Tooltip="腰を下げるのはここまで (m)", Min=0, Step=0.01) float pelvisDrop = 0.3f;
+};
+
 }  // namespace rm::game_x_animation

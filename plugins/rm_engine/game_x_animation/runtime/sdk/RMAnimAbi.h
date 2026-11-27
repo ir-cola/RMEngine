@@ -66,6 +66,18 @@ typedef struct RmAnimRootApi {
     float (*layerWeight)(void* ctx, uint64_t entity, const char* layer);
 } RmAnimRootApi;
 
+/* IK (部品「IK」の鎖。段階 6)。名前は鎖の「名前」(UTF-8)。目標はワールドの位置 (float 3)。 */
+#define RM_PART_ANIM_IK "rm_engine.game_x_animation.animator_ik"
+#define RM_PART_ANIM_IK_VERSION 1u
+typedef struct RmAnimIkApi {
+    /* 目標が「スクリプト」の鎖の目標と重み (0..1)。 */
+    void (*setIkTarget)(void* ctx, uint64_t entity, const char* chain, const float* position, float weight);
+    /* 重みだけ (負の数: 部品の重みに戻す)。 */
+    void (*setIkWeight)(void* ctx, uint64_t entity, const char* chain, float weight);
+    /* 「向ける」で目標が「スクリプト」の鎖すべてを、その位置へ (重み 0: やめる)。 */
+    void (*lookAt)(void* ctx, uint64_t entity, const float* position, float weight);
+} RmAnimIkApi;
+
 #ifdef __cplusplus
 }
 #endif

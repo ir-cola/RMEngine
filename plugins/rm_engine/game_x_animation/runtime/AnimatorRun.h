@@ -17,6 +17,7 @@
 #include "rm_engine/space3d/runtime/Skeleton.h"
 
 #include <cstdint>
+#include <functional>
 #include <memory>
 #include <string>
 #include <string_view>
@@ -87,6 +88,24 @@ struct AnimatorRun {
     bool toldRoot = false;
     // スクリプトの SetLayerWeight (レイヤーの名前 → 重み。ルールの重みより強い。消すと元に戻る)。
     std::vector<std::pair<std::string, float>> layerWeights;
+
+    // IK (段階 6。部品「IK」: AnimatorIk.h)。スクリプトが置いた目標と重み・足の高さのならし・作業の骨の行列。
+    struct IkScript {
+        std::string chain;       // 鎖の名前
+        bool hasTarget = false;  // SetIkTarget した (目標はワールド)
+        Vec3 target{0, 0, 0};
+        float weight = -1;       // 0..1 (負: 部品の重みのまま)
+    };
+    struct IkState {
+        std::vector<IkScript> script;
+        bool lookAt = false;     // スクリプトの LookAt (「向ける」の鎖すべて)
+        Vec3 lookAtTarget{0, 0, 0};
+        float lookAtWeight = 1;
+        std::vector<float> offset;  // 地面の鎖ごとの、ならした足の高さのずれ (ワールドの m)
+        float pelvis = 0;           // ならした腰の下げ (m)
+        std::vector<space3d::Mat4> model;
+        bool active = false;        // 直前のフレームに IK をかけた
+    } ik;
 };
 
 // 部品のゲームの間の再生 (無い・別のエンティティから写されたものなら新しく作る)。
@@ -98,7 +117,11 @@ void BindModel(AnimatorRun& run, std::shared_ptr<const space3d::SkinData> skin, 
 // 1 フレーム (dt 秒。ゲームの時間の速さを掛けたもの)。通ったイベントを `fired` に足す (そのクリップの
 // Clip::events の中のもの。次の BindModel まで持つ)。姿勢が変わったら新しい版を `next` から取る。
 // 骨が無い (まだ読んでいない) ときは何もしない。
-void StepAnimator(AnimatorRun& run, const Animator& a, float dt, std::vector<const space3d::ClipEvent*>& fired, uint64_t (*next)());
+// `post` (null でなく中身があれば): 体とレイヤーを重ねた後、行列にする前の姿勢を直す (IK・揺れ。段階 6)。
+// あるときは毎フレーム姿勢を作り直す。直したら true を返す。
+using PoseHook = std::function<bool(animation3d::Pose& pose)>;
+void StepAnimator(AnimatorRun& run, const Animator& a, float dt, std::vector<const space3d::ClipEvent*>& fired, uint64_t (*next)(),
+                  const PoseHook* post = nullptr);
 
 // スクリプトの PlayClip: 欄の clip を `clip` にして、`fade` 秒かけてそれへ移る (同じクリップでも始めから)。
 // 一時停止も解く。モデルをまだ読んでいなければ、読んだときに流す。モデルにそのクリップが無いと false

@@ -138,3 +138,18 @@ RM_TEST(AnimPhysics_TurnIsTheTransforms) {
     CHECK(std::fabs(std::fabs(at.rotation.y) - 45.f) < 1.f);
     CHECK(std::fabs(at.position.x - p.x) < 1e-3f && std::fabs(at.position.z - p.z) < 1e-3f);
 }
+
+// 足の IK の地面 (口 ground: CastGround) は、自分のキャラクターの体に当たらず、その下の床に当たる。
+RM_TEST(AnimPhysics_GroundIgnoresOwnCharacter) {
+    World w;
+    Setup(w, 0.f, 0.f);
+    for (int i = 0; i < 10; ++i) w.runner.Advance(w.scene, kStep, kStep);
+    const auto& at = Get<space3d::Transform>(w.scene, w.hero);
+    const Vec3 above{at.position.x, at.position.y + 3.f, at.position.z};
+    const auto hit = animation_x_physics::CastGround(w.scene, above, {0, -1, 0}, 10.f, w.hero);
+    CHECK(hit.has_value());
+    if (hit) CHECK(std::fabs(hit->point.y) < 0.02f);
+    // 物理のワールドが無いシーン: 分からない
+    Scene empty;
+    CHECK(!animation_x_physics::CastGround(empty, above, {0, -1, 0}, 10.f, 0).has_value());
+}

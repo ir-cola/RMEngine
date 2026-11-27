@@ -118,6 +118,7 @@
     <ClCompile Include="..\plugins\rm_engine\animation3d\runtime\ClipTime.cpp" />
     <ClCompile Include="..\plugins\rm_engine\animation3d\runtime\Player.cpp" />
     <ClCompile Include="..\plugins\rm_engine\animation3d\runtime\RootMotion.cpp" />
+    <ClCompile Include="..\plugins\rm_engine\animation3d\runtime\Ik.cpp" />
     <ClCompile Include="TestClipEvents.cpp" />
     <ClCompile Include="..\plugins\rm_engine\animation3d\editor\ClipEvents.cpp" />
     <ClCompile Include="TestGameAnimation.cpp" />
@@ -129,6 +130,7 @@
     <ClCompile Include="..\plugins\rm_engine\game_x_animation\runtime\AnimatorLogic.cpp" />
     <ClCompile Include="..\plugins\rm_engine\game_x_animation\runtime\AnimatorPoser.cpp" />
     <ClCompile Include="..\plugins\rm_engine\game_x_animation\runtime\AnimatorRun.cpp" />
+    <ClCompile Include="..\plugins\rm_engine\game_x_animation\runtime\AnimatorIk.cpp" />
     <ClCompile Include="..\plugins\rm_engine\game_x_animation\runtime\AnimationSystem.cpp" />
     <ClCompile Include="..\plugins\rm_engine\game_x_animation\runtime\ScriptAnimator.cpp" />
     <ClCompile Include="..\plugins\rm_engine\game_x_animation\runtime\Register.cpp">

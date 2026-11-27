@@ -487,7 +487,7 @@ private:
             layer_ = li;
         }
         y += kRow + 6;
-        // 2 行目: マスク (骨の名前をカンマで。▾ で骨を足す) と、Play 中の重み。
+        // 2 行目: マスク (骨の名前をカンマで。▾ の骨の木で入れる / 外す) と、Play 中の重み。
         Label(c, {x, y, 50, kRow}, Tr(L"マスク"), theme::TextDim);
         std::string mask = JoinNames(l.mask);
         const float maskW = wdt - 50 - 30 - (run ? 120 : 0);
@@ -498,8 +498,12 @@ private:
             });
         }
         if (w::IconButton(c, "bones", {x + 50 + maskW + 2, y + 1, 24, kIcon}, w::Icon::ChevronDown)) {
+            // 骨の木 (T1): 入れた骨と、その下の骨にチェック。クリックで入れる / 外す。
             menu_ = {MenuKind::Bone, li, 0, 0};
-            choices_ = ModelBoneNames(host.host, host.scene, entity_);
+            boneTree_ = ModelBoneTree(host.host, host.scene, entity_);
+            choices_.clear();
+            for (const BoneRow& b : boneTree_) choices_.push_back(b.name);
+            maskNow_ = l.mask;
             popup_.OpenAt(x + 50, y + kRow);
         }
         if (run) Label(c, {x + wdt - 116, y, 116, kRow}, TrF(L"今の重み {:.2f}", LiveOf(run).weight), theme::Accent);
@@ -899,10 +903,14 @@ private:
                     }
                 });
             } else if (t.kind == MenuKind::Bone) {
-                Edit(host, "マスクに骨を足す", 0, [t, name](AnimController& a) {
+                Edit(host, "マスクの骨を入れる / 外す", 0, [t, name](AnimController& a) {
                     if (t.layer >= a.layers.size()) return;
                     auto& mask = a.layers[t.layer].mask;
-                    if (std::find(mask.begin(), mask.end(), name) == mask.end()) mask.push_back(name);
+                    if (const auto it = std::find(mask.begin(), mask.end(), name); it != mask.end()) {
+                        mask.erase(it);
+                    } else {
+                        mask.push_back(name);
+                    }
                 });
             }
         }
@@ -911,7 +919,23 @@ private:
             const bool was = c.InputEnabled();
             c.SetInputEnabled(true);
             std::vector<w::MenuItem> items;
-            for (const std::string& name : choices_) items.push_back({Utf8ToWide(name)});
+            if (menu_.kind == MenuKind::Bone) {
+                // 骨の木: 入れた骨にチェック。その下の骨は (上で入っているので) 薄くチェック。
+                std::vector<int> state(boneTree_.size(), 0);  // 0: なし 1: 入れた 2: 上の骨で入っている
+                for (size_t i = 0; i < boneTree_.size(); ++i) {
+                    const int p = boneTree_[i].parent;
+                    if (p >= 0 && static_cast<size_t>(p) < i && state[static_cast<size_t>(p)] != 0) state[i] = 2;
+                    if (std::find(maskNow_.begin(), maskNow_.end(), boneTree_[i].name) != maskNow_.end()) state[i] = 1;
+                }
+                for (size_t i = 0; i < boneTree_.size(); ++i) {
+                    w::MenuItem it{BoneTreeLabel(boneTree_[i])};
+                    it.checked = state[i] != 0;
+                    it.enabled = state[i] != 2;
+                    items.push_back(std::move(it));
+                }
+            } else {
+                for (const std::string& name : choices_) items.push_back({Utf8ToWide(name)});
+            }
             if (items.empty()) items.push_back({menu_.kind == MenuKind::Bone ? Tr(L"(モデルに骨がありません)") : Tr(L"(モデルにクリップがありません)"), {}, false});
             if (const int chosen = w::MenuPopup(c, popup_, items, 240); chosen >= 0 && !choices_.empty()) chosen_ = chosen;
             c.SetInputEnabled(was);
@@ -977,6 +1001,8 @@ private:
     MenuTarget menu_;
     int chosen_ = -1;
     std::vector<std::string> choices_;
+    std::vector<BoneRow> boneTree_;      // マスクの ▾ の骨の木 (開いたときのもの)
+    std::vector<std::string> maskNow_;  // ... そのときのマスク
 };
 
 }  // namespace

@@ -1,6 +1,7 @@
 #include "rm_engine/animation_x_physics/runtime/Register.h"
 
 #include "core/reflect/Reflect.h"
+#include "rm_engine/game_x_animation/runtime/GroundProbe.h"
 #include "rm_engine/game_x_animation/runtime/RootMotionSink.h"
 #include "rm_engine/physics/runtime/Components.h"
 #include "rm_engine/physics/runtime/PhysicsWorld.h"
@@ -20,9 +21,20 @@ bool TakeRootMotion(game_production::Scene& scene, int entity, Vec3 worldMove, f
     return physics::WorldOf(scene).Move(scene, entity, v);
 }
 
+std::optional<game_x_animation::GroundHit> CastGround(game_production::Scene& scene, Vec3 from, Vec3 dir, float max, int ignore) {
+    physics::PhysicsWorld* w = physics::FindWorldOf(scene);  // (まだ物理が動いていない: 地面は分からない)
+    if (!w) return std::nullopt;
+    const auto hit = w->Raycast(from, dir, max, ignore);
+    if (!hit) return std::nullopt;
+    return game_x_animation::GroundHit{hit->point, hit->normal};
+}
+
 void RegisterRuntime(RuntimeRegistry& registry) {
     static const game_x_animation::RootMotionSinkInfo kSink{&TakeRootMotion};
     registry.Contribute(game_x_animation::kRootMotionPoint, kSink);
+    // 足の IK の地面: 物理の光線 (自分のキャラクターの体には当たらない)。
+    static const game_x_animation::GroundProbeInfo kGround{&CastGround};
+    registry.Contribute(game_x_animation::kGroundPoint, kGround);
 }
 
 }  // namespace rm::animation_x_physics
