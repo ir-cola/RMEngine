@@ -120,6 +120,8 @@
     <ClCompile Include="..\plugins\rm_engine\animation3d\runtime\RootMotion.cpp" />
     <ClCompile Include="..\plugins\rm_engine\animation3d\runtime\Ik.cpp" />
     <ClCompile Include="..\plugins\rm_engine\animation3d\runtime\Spring.cpp" />
+    <ClCompile Include="..\plugins\rm_engine\animation3d\runtime\Thinning.cpp" />
+    <ClCompile Include="TestWorkQueue.cpp" />
     <ClCompile Include="..\plugins\rm_engine\animation3d\runtime\MorphPreview.cpp" />
     <ClCompile Include="..\plugins\rm_engine\space3d\runtime\Morph.cpp" />
     <ClCompile Include="TestClipEvents.cpp" />

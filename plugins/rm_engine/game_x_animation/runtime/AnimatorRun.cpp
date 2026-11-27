@@ -115,6 +115,12 @@ void StepAnimator(AnimatorRun& run, const Animator& a, float dt, std::vector<con
     if (layered || !run.blend.empty()) changed = true;  // (混ぜている・重ねている間は、重みが変わるので毎フレーム)
     const bool hooked = post && *post;
     if (hooked) changed = true;  // (IK・揺れは目標や地面で毎フレーム変わる)
+    // 遠い・見えない物 (段階 7): 前の骨の行列のまま (姿勢の版も変えない: 影も使い回す)。時刻とイベントは上で進めた。
+    if (run.skipPose && run.version != 0) {
+        ++run.skippedPoses;
+        run.moving = false;
+        return;
+    }
     if (changed || run.version == 0) {
         const animation3d::Pose& base = p.EvaluatePose(run.skin->skeleton);
         (void)base;

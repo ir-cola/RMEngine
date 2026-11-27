@@ -1151,10 +1151,12 @@ ID3D11Texture2D* Renderer::Render(ID3D11DeviceContext* ctx, const RenderFrame& f
         items_.push_back({s.cube.get(), &b.world, b.color, b.castShadow, {}, {0, 0, 0, 0}});
         items_.back().moving = b.moving;
     }
-    for (const MeshDraw& m : f.meshes) {
+    for (size_t mi = 0; mi < f.meshes.size(); ++mi) {
+        const MeshDraw& m = f.meshes[mi];
         if (!m.mesh || m.mesh->indexCount == 0) continue;
         items_.push_back({m.mesh, &m.world, m.color, m.castShadow, m.materials, m.highlight});
         Item& it = items_.back();
+        it.draw = static_cast<int>(mi);
         it.moving = m.moving;
         if (!m.bones.empty() && m.bones.size() != m.mesh->boneCount) ++stats_.wrongBoneCounts;  // (休みの姿勢で描く)
         if (!m.mesh->skinned) continue;
@@ -1181,6 +1183,23 @@ ID3D11Texture2D* Renderer::Render(ID3D11DeviceContext* ctx, const RenderFrame& f
         it.bounds = WorldBounds(*it.world, lo, hi);
         it.seen = BoxInFrustum(camera, it.bounds);
         if (it.seen) ++stats_.drawn;
+    }
+    // 画面の上の高さの割合 (囲む球の半径 x 投影の縦の倍率 / 奥行き。遠い物の姿勢を間引く)。
+    screenSizes_.assign(f.meshes.size(), 0.f);
+    {
+        const auto toWorld = Inverse(f.view);
+        const Vec3 camEye = toWorld ? TransformPoint(*toWorld, {0, 0, 0}) : Vec3{0, 0, 0};
+        const Vec3 camFwd = toWorld ? Normalize(TransformDirection(*toWorld, {0, 0, 1})) : Vec3{0, 0, 1};
+        const bool perspective = f.projection.m[2][3] != 0;
+        const float scaleY = std::fabs(f.projection.m[1][1]);
+        for (const Item& it : items_) {
+            if (it.draw < 0 || !it.seen) continue;
+            const Vec3 center = (it.bounds.min + it.bounds.max) * 0.5f;
+            const float radius = Length(it.bounds.max - it.bounds.min) * 0.5f;
+            const float depth = std::max(Dot(center - camEye, camFwd), 0.05f);
+            const float size = std::min(1.f, radius * scaleY / (perspective ? depth : 1.f));
+            screenSizes_[static_cast<size_t>(it.draw)] = std::max(size, 1e-6f);
+        }
     }
     // 向きの地図の形 (プラグインのもの: 天候のコライダー): 絵には出ず、その地図にだけ入る。
     for (const MapShape& b : f.mapShapes) {

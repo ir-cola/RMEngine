@@ -10,6 +10,7 @@
 #include "rm_engine/animation3d/runtime/Pose.h"
 #include "rm_engine/animation3d/runtime/RootMotion.h"
 #include "rm_engine/animation3d/runtime/Spring.h"
+#include "rm_engine/animation3d/runtime/Thinning.h"
 #include "rm_engine/space3d/runtime/View.h"
 
 #include <cmath>
@@ -960,4 +961,18 @@ RM_TEST(Anim3d_SpringsCollideWarpAndFrameRate) {
         StepSprings(b, s, pb, model, Mat4{}, 1.f / 60.f, false);
     }
     CHECK(Length(Tip(s, pa) - Tip(s, pb)) < 0.02f);
+}
+
+// 遠い物を間引く (docs/ANIMATION.md 7-3。Thinning.h): 画面の上の大きさ → 何フレームに 1 回。見えない物は 0。
+RM_TEST(Anim3d_ThinningRule) {
+    CHECK(PoseInterval(0.5f, true) == 1 && PoseInterval(kThinNear, true) == 1);
+    CHECK(PoseInterval(0.1f, true) == 2 && PoseInterval(0.01f, true) == 4);
+    CHECK(PoseInterval(0.01f, false) == 1);  // 間引かない
+    CHECK(PoseInterval(0.f, true) == 0 && PoseInterval(0.f, false) == 0 && PoseInterval(-1.f, true) == 0);  // 見えない
+    int made = 0;
+    for (unsigned long long f = 0; f < 40; ++f) made += PoseThisFrame(4, f, 3) ? 1 : 0;
+    CHECK(made == 10);
+    CHECK(PoseThisFrame(1, 7, 5) && !PoseThisFrame(0, 7, 5));
+    // ずらし: 同じフレームに集まらない
+    CHECK(PoseThisFrame(2, 10, 0) != PoseThisFrame(2, 10, 1));
 }

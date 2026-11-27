@@ -146,6 +146,16 @@ public:
 
     bool Animating() const override { return animating_; }
 
+    void Seen(int entity, float screenFraction) override {
+        if (!playing_) return;
+        const Animator* a = AnimatorOf(entity);
+        if (!a || !a->run || a->run->owner != entity) return;
+        AnimatorRun& run = *a->run;  // (画面とシステムは同じ主のスレッド)
+        run.sightMax = std::max(run.sightMax, screenFraction);
+        ++run.sightReports;
+        run.everSeen = true;
+    }
+
 private:
     struct Body {
         std::shared_ptr<const space3d::SkinData> skin;

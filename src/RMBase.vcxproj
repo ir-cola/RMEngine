@@ -38,6 +38,7 @@
     <ClCompile Include="base\Json.cpp" />
     <ClCompile Include="base\Log.cpp" />
     <ClCompile Include="base\Utf.cpp" />
+    <ClCompile Include="base\WorkQueue.cpp" />
     <ClCompile Include="base\Zip.cpp" />
   </ItemGroup>
   <ItemGroup>
@@ -48,6 +49,7 @@
     <ClInclude Include="base\Log.h" />
     <ClInclude Include="base\Utf.h" />
     <ClInclude Include="base\Version.h" />
+    <ClInclude Include="base\WorkQueue.h" />
     <ClInclude Include="base\Zip.h" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />

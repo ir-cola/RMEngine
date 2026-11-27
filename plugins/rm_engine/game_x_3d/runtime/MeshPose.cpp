@@ -29,6 +29,14 @@ std::vector<std::unique_ptr<MeshPoser>> MakePosers(const RuntimeRegistry* regist
     return out;
 }
 
+void ReportSeen(std::span<const std::unique_ptr<MeshPoser>> posers, std::span<const PoseOwner> owners, std::span<const float> screenSizes) {
+    const size_t n = std::min(owners.size(), screenSizes.size());
+    for (size_t i = 0; i < n; ++i) {
+        if (!owners[i].model || !owners[i].model->skin) continue;
+        for (const auto& p : posers) p->Seen(owners[i].entity, screenSizes[i]);
+    }
+}
+
 bool ApplyPoses(std::span<const std::unique_ptr<MeshPoser>> posers, const MeshPoseFrame& f, std::span<const PoseOwner> owners,
                 std::span<space3d::MeshDraw> meshes) {
     if (posers.empty()) return false;

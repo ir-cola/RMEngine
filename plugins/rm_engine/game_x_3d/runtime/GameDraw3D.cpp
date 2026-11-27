@@ -207,6 +207,7 @@ public:
         frame.meshes = meshes_;
         f.dc->Flush();  // 先に Direct2D の描画、そのあと Direct3D の絵
         ID3D11Texture2D* picture = renderer_.Render(f.gfx.D3DContext(), frame);
+        ReportSeen(posers_, owners_, renderer_.MeshScreenSizes());  // (遠い物の姿勢を間引く)
         if (!picture) return;
         if (picture != picture_ || !bitmap_) {
             bitmap_.Reset();

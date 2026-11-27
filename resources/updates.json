@@ -3,6 +3,20 @@
   "format": 1,
   "updates": [
     {
+      "version": "0.0.42",
+      "date": "2026-11-27",
+      "items": [
+        {
+          "ja": "骨のアニメーションを速く: アニメーターの姿勢を作業スレッドで並べて作ります (300 体で姿勢の時間が 1/4 ほどに)",
+          "en": "Faster bone animation: animator poses are built in parallel on worker threads (about a quarter of the pose time with 300 characters)"
+        },
+        {
+          "ja": "アニメーターに「遠いと間引く」と「見えないとき」: 遠い物は姿勢を 2 / 4 フレームに 1 回、見えない物は時間だけ進めます",
+          "en": "Animator fields Thin out when far and When unseen: far characters update their pose every 2 or 4 frames, unseen ones only advance time"
+        }
+      ]
+    },
+    {
       "version": "0.0.41",
       "date": "2026-11-27",
       "items": [

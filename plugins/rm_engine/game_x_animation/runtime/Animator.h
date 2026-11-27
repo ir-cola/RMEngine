@@ -28,6 +28,13 @@ enum class RootMotionUse {
     RM_ITEM(Label="スクリプトに渡す") Script, // 動かさない。スクリプトが RootDelta / RootTurn で読む
 };
 
+// 見えないアニメーター (docs/ANIMATION.md 7-3・6 章の 18)。
+RM_ENUM(Label="見えないとき")
+enum class WhenUnseen {
+    RM_ITEM(Label="時間だけ進める") TimeOnly,  // 時刻・ルール・イベント・ルートモーションは進め、姿勢・IK・揺れは作らない
+    RM_ITEM(Label="全部計算") Everything,
+};
+
 RM_STRUCT(Label="アニメーター")
 struct Animator {
     RM_PROPERTY(Edit, Label="状態とルール", Tooltip="状態とルールのファイル (.rmanim。アセットのパネルの右クリック →「作成」→「アニメーター (状態とルール)」)。入れると、ゲームの間はルールが状態を決め、その状態のクリップ・ループ・速さで流します (下の 3 つは、そのとき今の状態のものになります)", AssetKind=".rmanim")
@@ -40,6 +47,10 @@ struct Animator {
     bool playOnStart = true;
     RM_PROPERTY(Edit, Label="ルートモーション", Tooltip="クリップの根の骨の動き (モデルのインスペクターの「クリップとイベント」で、クリップごとに「使う」を入れたもの) をどうするか。動かす: エンティティが動きます (物理のキャラクターがあれば、その速さになります。動かすクリップに重みがある間は、スクリプトの Character::Move より強い)。その場で: 動きを捨てます。スクリプトに渡す: 動かさず、スクリプトの RootDelta / RootTurn で読めます")
     RootMotionUse rootMotion = RootMotionUse::Move;
+    RM_PROPERTY(Edit, Label="遠いと間引く", Tooltip="画面の上で小さい (遠い) とき、姿勢を作るのを 2 フレーム / 4 フレームに 1 回にします (数百体のときに速く。間は前の姿勢のまま)")
+    bool thinOut = true;
+    RM_PROPERTY(Edit, Label="見えないとき", Tooltip="カメラに映らないとき。時間だけ進める: 時刻・ルール・イベント・ルートモーションは進め、姿勢・IK・揺れは作りません (ゲームの動きは見え方で変わりません)。全部計算: いつも姿勢も作ります")
+    WhenUnseen whenUnseen = WhenUnseen::TimeOnly;
     // ゲームが動いている間の再生 (システム「アニメーション」が作る。Play するコピーだけが持つ)。
     RM_TRANSIENT() std::shared_ptr<AnimatorRun> run;
 };

@@ -17,6 +17,7 @@
 #include "rm_engine/animation3d/runtime/RootMotion.h"
 #include "rm_engine/space3d/runtime/View.h"
 #include "core/RuntimeRegistry.h"
+#include "base/WorkQueue.h"
 #include "rm_engine/game_x_3d/runtime/MeshRenderer.h"
 #include "rm_engine/game_production/runtime/Scripts.h"
 #include "rm_engine/game_production/runtime/Systems.h"
@@ -882,4 +883,58 @@ RM_TEST(GameAnim_SpringBonesFromComponentAndModel) {
     ApplyAnimatorSprings(run, sb, space3d::LocalMatrix(at), 0.f, pose);
     animation3d::ModelMatrices(skin->skeleton, pose, model);
     CHECK(Near(Pos(model, 3).x, -0.1f, 1e-3f));
+}
+
+// 間引いたフレーム・見えない物 (段階 7): 姿勢は前のまま (版も同じ) だが、時刻・イベント・ルートモーションは進む。
+RM_TEST(GameAnim_SkippedPoseStillAdvances) {
+    const game_x_3d::SkinnedModel m = WalkingBody();
+    auto clips = std::make_shared<std::vector<space3d::Clip>>(*m.clips);
+    (*clips)[0].events = {{0.3f, "Step", 0, ""}};
+    Animator a;
+    a.clip = "Walk";
+    AnimatorRun run;
+    BindModel(run, m.skin, clips);
+    std::vector<const space3d::ClipEvent*> fired;
+    StepAnimator(run, a, 0.1f, fired, &NextForTest);
+    const uint64_t v = run.version;
+    const auto bones = run.bones;
+    run.skipPose = true;
+    fired.clear();
+    StepAnimator(run, a, 0.3f, fired, &NextForTest);  // 0.1 → 0.4: Step を通る
+    CHECK(run.version == v && run.bones.size() == bones.size() && !run.moving && run.skippedPoses == 1);
+    CHECK(fired.size() == 1 && Near(run.player.Time(), 0.4f) && Near(run.root.move.z, 0.3f, 1e-3f));
+    run.skipPose = false;
+    StepAnimator(run, a, 0.1f, fired, &NextForTest);
+    CHECK(run.version != v);
+}
+
+// 1 本と作業の列で、骨の行列もイベントも同じ。
+RM_TEST(GameAnim_ParallelPosesMatchSerial) {
+    const game_x_3d::SkinnedModel m = WalkingBody();
+    constexpr size_t kCount = 48;
+    std::vector<Animator> as(kCount);
+    std::vector<AnimatorRun> serial(kCount), parallel(kCount);
+    for (size_t i = 0; i < kCount; ++i) {
+        as[i].clip = i % 2 ? "Walk" : "Still";
+        as[i].speed = 0.5f + static_cast<float>(i) * 0.05f;
+        BindModel(serial[i], m.skin, m.clips);
+        BindModel(parallel[i], m.skin, m.clips);
+    }
+    std::vector<std::vector<const space3d::ClipEvent*>> fs(kCount), fp(kCount);
+    for (int frame = 0; frame < 5; ++frame) {
+        for (size_t i = 0; i < kCount; ++i) StepAnimator(serial[i], as[i], 1.f / 30.f, fs[i], &space3d::NextPoseVersion);
+        SharedWorkQueue().ParallelFor(kCount, [&](size_t b, size_t e) {
+            for (size_t i = b; i < e; ++i) StepAnimator(parallel[i], as[i], 1.f / 30.f, fp[i], &space3d::NextPoseVersion);
+        });
+    }
+    bool same = true;
+    for (size_t i = 0; i < kCount; ++i) {
+        same = same && serial[i].bones.size() == parallel[i].bones.size() && fs[i].size() == fp[i].size();
+        for (size_t k = 0; same && k < serial[i].bones.size(); ++k) {
+            for (int r = 0; r < 3; ++r) {
+                for (int c = 0; c < 4; ++c) same = same && serial[i].bones[k].row[r][c] == parallel[i].bones[k].row[r][c];
+            }
+        }
+    }
+    CHECK(same);
 }

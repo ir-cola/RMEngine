@@ -350,6 +350,7 @@ public:
         size_t bonesUploaded = 0;    // GPU に書いた骨の行列 (フレームの合計)
         size_t wrongBoneCounts = 0;  // MeshDraw::bones の数がメッシュの骨の数と違った (休みの姿勢で描いた)
         size_t morphedDraws = 0;     // ブレンドシェイプを Compute Shader で足した描画
+        size_t computeSkinned = 0;   // 骨の行列を Compute Shader で掛けた描画 (段階 7)
     };
     // デバイスごと (そのデバイスの全レンダラーで共有: シーンビュー、カメラのプレビュー、
     // サムネイル): シェーダーと状態、立方体と床、定数バッファ、シャドウマップと各マップが今
@@ -358,6 +359,13 @@ public:
     const Stats& LastStats() const { return stats_; }
     // Compute Shader でブレンドシェイプを混ぜられる (機能レベル 11 以上)。できないときは形を動かさずに描く。
     bool CanMorph() const { return morphCs_ != nullptr; }
+    // 骨のあるメッシュの頂点を、1 フレームに 1 回 Compute Shader で動かしてから描く (段階 7: 影の地図を何回描いても
+    // スキニングは 1 回)。false か Compute Shader が使えない: 頂点シェーダーで (描くたびに)。既定は true。
+    void SetComputeSkinning(bool on) { computeSkinning_ = on; }
+    bool ComputeSkinning() const { return computeSkinning_ && morphCs_ != nullptr; }
+    // 直前の Render の、RenderFrame::meshes ごとの画面の上の高さの割合 (カメラに映らなかった: 0)。遠い物の姿勢を
+    // 間引くのに使う (docs/ANIMATION.md 7-3: 口 mesh_pose の MeshPoser::Seen)。
+    std::span<const float> MeshScreenSizes() const { return screenSizes_; }
 
 private:
     struct Item {
@@ -377,6 +385,7 @@ private:
         uint32_t bones = kNoBones;   // 骨の行列 (bones_) の最初の行 (float4 単位)。kNoBones: 休みの姿勢
         std::span<const BoneMatrix> skin;  // ... そのスキンの行列 (見えるかの判定)
         uint64_t pose = 0;           // 姿勢の版 (hash に入る。0: 休みの姿勢)
+        int draw = -1;               // RenderFrame::meshes の何番目か (箱・地図の形: -1)
     };
     // 描画 1 つ: メッシュの三角形のいくつかと、物の数値と材質 (`slot`: draws_ での場所。
     // シェーダーがインスタンスのデータとして読む)。
@@ -451,6 +460,7 @@ private:
     uint32_t cloudSize_ = 0;
     // ブレンドシェイプ: Compute Shader・形の重みの表・フレームごとの、形を足した頂点 (描画ごとに 1 つ。使い回す)。
     Ptr<ID3D11ComputeShader> morphCs_;
+    bool computeSkinning_ = true;
     Ptr<ID3D11Buffer> morphActive_, morphCb_;
     Ptr<ID3D11ShaderResourceView> morphActiveView_;
     size_t morphActiveCapacity_ = 0;
@@ -462,6 +472,7 @@ private:
     };
     std::vector<MorphOut> morphPool_;
     std::vector<MeshDraw> morphDraws_;  // 形を足した物を差し替えた描画 (Render の間だけ)
+    std::vector<float> screenSizes_;
     // `in` に重みの付いた形があれば、その頂点を Compute Shader で作り、メッシュを差し替えたフレームを返す。
     const RenderFrame& PrepareMorphs(ID3D11DeviceContext* ctx, const RenderFrame& in, RenderFrame& scratch);
     const GpuMesh* Morphed(ID3D11DeviceContext* ctx, const GpuMesh& mesh, std::span<const float> weights, size_t slot);

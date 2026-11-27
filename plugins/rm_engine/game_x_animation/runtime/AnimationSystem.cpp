@@ -1,6 +1,8 @@
 #include "rm_engine/game_x_animation/runtime/AnimationSystem.h"
 
 #include "base/Log.h"
+#include "base/WorkQueue.h"
+#include "rm_engine/animation3d/runtime/Thinning.h"
 #include "platform/Shell.h"
 #include "rm_engine/animation/runtime/Rules.h"
 #include "rm_engine/game_x_3d/runtime/MeshPose.h"
@@ -139,7 +141,16 @@ space3d::Transform RootMotionTransform(const space3d::Transform& current, const 
 
 void RunAnimation(game_production::SystemContext& ctx) {
     const std::string type = reflect::TypeOf<Animator>().name;
-    std::vector<const space3d::ClipEvent*> fired;
+    // 3 つに分ける (docs/ANIMATION.md 7-3): 1. 前 (主のスレッド): モデルとルールを読む・ルール・IK と揺れの支度・間引き
+    // 2. 並べて (作業の列): 姿勢 (StepAnimator) 3. 後 (主のスレッド・エンティティの順): ルートモーション・イベント。
+    struct Job {
+        SceneEntity* e = nullptr;
+        Animator* a = nullptr;
+        AnimatorRun* run = nullptr;
+        PoseHook post;
+        std::vector<const space3d::ClipEvent*> fired;
+    };
+    std::vector<Job> jobs;
     game_production::ForEachComponent(ctx.scene, type, [&](SceneEntity& e, Component& c) {
         if (!c.Known()) return;
         Animator& a = *static_cast<Animator*>(c.value.Get());
@@ -188,7 +199,13 @@ void RunAnimation(game_production::SystemContext& ctx) {
             }
         }
         StepAnimatorRules(run, a, ctx.dt);
-        fired.clear();
+        // 遠い・見えない物 (段階 7): 画面が前のフレームに知らせた大きさで、このフレームに姿勢を作るか決める。
+        if (run.sightReports > 0) run.screen = run.sightMax;
+        run.sightMax = 0;
+        run.sightReports = 0;
+        int interval = run.everSeen ? animation3d::PoseInterval(run.screen, a.thinOut) : 1;
+        if (interval == 0 && a.whenUnseen == WhenUnseen::Everything) interval = 1;
+        run.skipPose = !animation3d::PoseThisFrame(interval, ctx.frame, static_cast<unsigned>(e.data.id));
         // IK (部品「IK」が同じエンティティにあれば) → 揺れる骨 (部品「揺れる骨」): 体とレイヤーの後、行列にする前。
         PoseHook post;
         const AnimatorIk* ikOn = nullptr;
@@ -218,17 +235,32 @@ void RunAnimation(game_production::SystemContext& ctx) {
                     if (target.id == 0 || target.id > 0x7fffffffu || !ctx.scene.Find(static_cast<int>(target.id))) return std::nullopt;
                     return space3d::TransformPoint(game_x_3d::WorldMatrixOf(ctx.scene, static_cast<int>(target.id)), offset);
                 };
-                post = [&run, ikOn, springsOn, world, dt = ctx.dt](animation3d::Pose& pose) mutable {
-                    bool changed = ikOn && ApplyAnimatorIk(run, *ikOn, world, pose);
-                    if (springsOn) changed = ApplyAnimatorSprings(run, *springsOn, world.entityWorld, dt, pose) || changed;
+                // (作業の列のスレッドで呼ばれる: 読むのはシーン (書く物は無い) と、このアニメーターの run だけ)
+                post = [runp = &run, ikOn, springsOn, world, dt = ctx.dt](animation3d::Pose& pose) mutable {
+                    bool changed = ikOn && ApplyAnimatorIk(*runp, *ikOn, world, pose);
+                    if (springsOn) changed = ApplyAnimatorSprings(*runp, *springsOn, world.entityWorld, dt, pose) || changed;
                     return changed;
                 };
             }
         }
-        StepAnimator(run, a, ctx.dt, fired, &space3d::NextPoseVersion, &post);
+        jobs.push_back({&e, &a, &run, std::move(post), {}});
+    });
+    // 2. 姿勢: アニメーターどうしは関わらないので並べる (同じ結果になる: tests/TestGameAnimation.cpp)。
+    const float dt = ctx.dt;
+    SharedWorkQueue().ParallelFor(jobs.size(), [&](size_t begin, size_t end) {
+        for (size_t i = begin; i < end; ++i) {
+            Job& j = jobs[i];
+            StepAnimator(*j.run, *j.a, dt, j.fired, &space3d::NextPoseVersion, &j.post);
+        }
+    });
+    // 3. 後: エンティティの順に。
+    for (Job& j : jobs) {
+        SceneEntity& e = *j.e;
+        const Animator& a = *j.a;
+        AnimatorRun& run = *j.run;
         ApplyRootMotion(ctx, e, a, run);  // (イベントの OnEvent はこの後: 足音は動いた後の位置で鳴る)
         if (ctx.events) {
-            for (const space3d::ClipEvent* ev : fired) ctx.events->push_back({e.data.id, ev->name, ev->number, ev->text, e.data.id});
+            for (const space3d::ClipEvent* ev : j.fired) ctx.events->push_back({e.data.id, ev->name, ev->number, ev->text, e.data.id});
         }
         if (!run.toldPlaying && run.moving && !run.paused && run.player.ClipIndex() >= 0 &&
             run.player.Time() != StartTime(run.player.speed, Duration(run), run.player.loop)) {
@@ -237,7 +269,7 @@ void RunAnimation(game_production::SystemContext& ctx) {
                       (*run.clips)[static_cast<size_t>(run.player.ClipIndex())].name, run.bones.size(), run.player.Time());
             run.toldPlaying = true;
         }
-    });
+    }
 }
 
 space3d::Transform AttachedTransform(const space3d::Transform& current, const space3d::Mat4& parentWorld, const space3d::Mat4& boneWorld,

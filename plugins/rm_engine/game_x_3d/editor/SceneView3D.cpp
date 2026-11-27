@@ -1067,6 +1067,7 @@ private:
         // Direct2D のここまでの描画をまず GPU に送り、そのあと Direct3D が自分の絵に描く。
         dc->Flush();
         ID3D11Texture2D* picture = pic.renderer.Render(host.host.Graphics().D3DContext(), f);
+        ReportSeen(pic.posers, meshOwners_, pic.renderer.MeshScreenSizes());  // (遠い物の姿勢を間引く)
         if (game_production::ViewReportsWanted() && !overhead_ && (host.game || &pic == &main_)) ReportDrawing(host, pic, f);
         if (!picture) return;
         if (picture != pic.texture || dc != pic.dc || !pic.bitmap) {

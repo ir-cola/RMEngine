@@ -115,6 +115,15 @@ struct AnimatorRun {
         bool active = false;        // 直前のフレームに IK をかけた
     } ik;
 
+    // 遠い物を間引く (段階 7)。画面が知らせた大きさ (このフレームの一番大きいもの・知らせた数・1 度でも知らせたか)、
+    // このフレームに姿勢を作らない (前の骨の行列のまま: StepAnimator が見る)、間引いたフレームの数 (デバッグ)。
+    float sightMax = 0;
+    int sightReports = 0;
+    bool everSeen = false;
+    float screen = 1;
+    bool skipPose = false;
+    uint64_t skippedPoses = 0;
+
     // 揺れる骨 (段階 6。部品「揺れる骨」: AnimatorSprings.h)。鎖と揺れの今・作り直す鍵・スクリプトの ResetSprings。
     animation3d::SpringState springs;
     std::string springsKey;

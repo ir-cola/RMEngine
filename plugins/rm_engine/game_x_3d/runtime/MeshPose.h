@@ -68,6 +68,12 @@ public:
     virtual MeshPoseAnswer Pose(int entity, const SkinnedModel& model) = 0;
     // 自分で動く姿勢がある: エディターは次のフレームにもビューを描き直す。
     virtual bool Animating() const { return false; }
+    // 描いた後: エンティティ `entity` が画面の上でどれだけの高さだったか (割合。映らなかった: 0)。遠い物の姿勢を
+    // 間引く (docs/ANIMATION.md 7-3)。画面がいくつもあれば、それぞれが知らせる。
+    virtual void Seen(int entity, float screenFraction) {
+        (void)entity;
+        (void)screenFraction;
+    }
 };
 
 struct MeshPoseInfo {
@@ -88,5 +94,7 @@ struct PoseOwner {
 // 返すのは、どれかが Animating か。owners と meshes は同じ長さ (違えば短い方まで)。
 bool ApplyPoses(std::span<const std::unique_ptr<MeshPoser>> posers, const MeshPoseFrame& f, std::span<const PoseOwner> owners,
                 std::span<space3d::MeshDraw> meshes);
+// 描いた後 (Renderer::MeshScreenSizes。owners と同じ並び): 骨のあるモデルの物ごとに MeshPoser::Seen を知らせる。
+void ReportSeen(std::span<const std::unique_ptr<MeshPoser>> posers, std::span<const PoseOwner> owners, std::span<const float> screenSizes);
 
 }  // namespace rm::game_x_3d

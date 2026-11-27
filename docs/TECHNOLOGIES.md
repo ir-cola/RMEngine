@@ -1339,10 +1339,19 @@ plugins/            ソフトはプラグインで足す (いまは「ゲーム�
 - **なぜそれか** — Verlet は少ない計算で安定し、長さを保つ (位置を直すだけ) のと相性がよい。VRM と同じ式にしたので、VRoid のモデルの揺れを作り直さずに使える
 - **どこ** — `plugins/rm_engine/animation3d/runtime/Spring.*`・`game_x_animation/runtime/AnimatorSprings.*`・`Animator.h` (`SpringBones`)・`space3d/runtime/Skeleton.h` (`SpringChainSetting`)・`Mesh.cpp` (`ReadSprings`)・`MeshBake.*` (`SPRG`)、`tests/TestAnimation3d.cpp`・`TestGameAnimation.cpp`・`TestGltfSkin.cpp`・`TestMeshBake.cpp`
 
+### 作業の列 (std::jthread の小さなスレッドの組)・遠い物を間引く (画面の上の大きさ) (2026-11-27)
+
+- **何か** — `base/WorkQueue` は決まった数の作業スレッド (`std::jthread`。止めると自分で join する) が、`ParallelFor(n, fn)` の範囲を区切って並べて処理する小さな仕組み。呼んだスレッドも手伝い、全部終わるまで戻らない (区切りを渡すのも終わりを数えるのも `std::mutex` と `std::condition_variable` で。入れ子の呼び出しはそのスレッドで順に)。標準ライブラリだけなので、ゲームにも入る
+- **何に使っているか** — システム「アニメーション」を 3 つに分けた: 1. 前 (主のスレッド): モデルとルールを読む・ルール・IK と揺れの支度・間引きを決める 2. 並べて: 姿勢 (アニメーターどうしは関わらない) 3. 後 (主のスレッド・エンティティの順): ルートモーションを Transform へ・イベントを送る。だから結果は 1 本のスレッドと同じ (テストで比べる)
+- **遠い物を間引く** — レンダラーが描いた物ごとに、画面の上の高さの割合 (囲む球の半径 x 投影の縦の倍率 / 奥行き) を覚え、描いた後に口 `mesh_pose` の `MeshPoser::Seen` で知らせる。アニメーションは次のフレームに、それが小さければ姿勢を 2 / 4 フレームに 1 回だけ作る (物ごとに番号でずらして、同じフレームに集まらないように)。映らなかった物は姿勢を作らないが、時刻・イベント・ルートモーションは進める
+- **数字** — `tools/benchanim` (骨 64 本・頂点 4,000 個のキャラクター 300 体): 姿勢を作る時間が 1 フレーム 2.43 ms → 作業スレッド (7 本 + 呼んだスレッド) で 0.65 ms → 遠い物を間引くと 0.28 ms
+- **どこ** — `src/base/WorkQueue.*`・`plugins/rm_engine/animation3d/runtime/Thinning.*`・`game_x_animation/runtime/AnimationSystem.cpp`・`AnimatorRun.cpp` (`skipPose`)・`AnimatorPoser.cpp` (`Seen`)・`game_x_3d/runtime/MeshPose.*` (`ReportSeen`)・`space3d/runtime/Renderer3D.*` (`MeshScreenSizes`)・`tools/benchanim`、`tests/TestWorkQueue.cpp`・`TestAnimation3d.cpp`・`TestGameAnimation.cpp`
+
 ## 追記の記録
 
 | 日付 | 足したこと |
 |---|---|
+| 2026-11-27 | 作業の列 (std::jthread の小さなスレッドの組・ParallelFor)・遠い物を間引く (画面の上の大きさ)・アニメーションの計測 tools/benchanim |
 | 2026-11-27 | 揺れる骨 (Verlet・長さを保つ・球から押し出す・決まった刻み)・VRM の揺れの設定 (VRMC_springBone / secondaryAnimation) |
 | 2026-11-27 | ブレンドシェイプ (形の差を重みで足す・Compute Shader で頂点を作る: 生のバイトのバッファと UAV・FBX の BlendShape) |
 | 2026-11-27 | IK (2 本の骨を余弦定理で・回転を骨の空間へ戻す・足を坂に: 光線と高さのならし)・配列の要素の中のドロップダウン |
