@@ -428,6 +428,8 @@ rule any  :             -> Idle 0.2
 - **段階 6 で後にしたこと (3: 揺れる骨)**: 止まっているエディターで揺れを見る (プレビュー)・シーンビューに鎖と当たりの球の印 (3D の線の口が要る)・VRM の当たりのグループ (今はどの鎖も全部の当たりを見る)・カプセルの当たり (今は頭の球)・天候の風で揺らす (天候 × アニメーション)・ラグドール (アニメーション × 物理)
 - **段階 7 でしたこと (1: 作業スレッドと間引き。2026-11-27。版 0.0.42)**: 核の `base/WorkQueue` (6 章の 17。`std::jthread` の小さな作業の列・`ParallelFor`・入れ子は順に)。システム「アニメーション」を 前 / 並べて / 後 に分けた (結果は 1 本と同じ)。遠い物を間引く: レンダラーの `MeshScreenSizes` → 口 `mesh_pose` の `MeshPoser::Seen` (`ReportSeen`) → `AnimatorRun::screen` → `PoseInterval` (20% / 7%) と `PoseThisFrame`。部品「アニメーター」の欄「遠いと間引く」「見えないとき [時間だけ進める | 全部計算]」(6 章の 18)。計測の道具 `tools/benchanim` (300 体で姿勢 2.43 → 0.65 → 0.28 ms)
 - **段階 7 で後にしたこと (1)**: デバッグ パネルにアニメーターごとの間引いた数 (`AnimatorRun::skippedPoses` はある)・物理・パーティクル・天候も作業の列を使う
+- **段階 7 でしたこと (2: Compute Shader のスキニング。2026-11-28。版 0.0.43)**: 形 (7-2-2) と骨を 1 つの Compute Shader (`MorphCS`) で、フレームの全部の描画の分を 1 本の置き場所に。メッシュごとに 1 回の `Dispatch`。描くときは `DeformedMeshVS` / `DeformedShadowVS` が DRAW.w + `SV_VertexID` で読む (まとめ描きのまま)。段階 6 の「形を足した写しのメッシュ」もこれにまとめた (形だけのとき・頂点シェーダーのスキニングのときも、同じ置き場所から読む)。頂点シェーダーのスキニングは残す (`Renderer::SetComputeSkinning(false)`・Compute Shader が使えない GPU)。テスト `Skinning_ComputeShaderMatchesVertexShader`。ベンチマークは性能の高い GPU を選ぶ (`igpu` で既定の GPU)。速さの差はこの絵では小さい (RTX 4060 で 4.1〜4.3 → 4.3〜4.4 ms)
+- **段階 7 で後にしたこと (2)**: 姿勢の版が変わらない物 (間引いたフレーム・止まった物) は頂点を作り直さない・エディターとゲームも性能の高い GPU を選ぶか (今は Windows の既定)
 - 段階ごとに版を 0.0.1 上げ、`resources/updates.json`・`docs/HOW_TO_TRY.md`・`docs/TEST_LIST.md`・`docs/TECHNOLOGIES.md` (スキニング・四元数・ドロネーなど) に書く
 - 段階 1 の前に、骨のある見本のモデルを決める (6 章の 4)
 - 段階 5〜7・2D のコマ送り・後にしたものの割り振り・ナビゲーションとのつなぎの詳しい設計は **7 章** (2026-11-26)

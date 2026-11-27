@@ -125,6 +125,7 @@ struct Renderer::Shared {
     Ptr<ID3D11Device> device;
     Ptr<ID3D11VertexShader> lineVs, meshVs, shadowVs, clearVs;
     Ptr<ID3D11VertexShader> skinnedMeshVs, skinnedShadowVs;  // 骨のあるメッシュ (MeshVS / ShadowVS + スキニング)
+    Ptr<ID3D11VertexShader> deformedMeshVs, deformedShadowVs;  // ... Compute Shader で動かした頂点を読む (段階 7)
     Ptr<ID3D11PixelShader> linePs, meshPs, floorPs, copyPs;
     // プラグインの手が入った MeshPS (RenderFrame::surface)。そのコードで引く (null: コンパイルできない - 1 回だけ知らせる)。
     std::unordered_map<std::string, Ptr<ID3D11PixelShader>> surfaces;
@@ -216,11 +217,12 @@ std::atomic<uint64_t> g_meshSerial{0};  // GpuMesh::serial: 同じ値は 2 度�
 }  // namespace
 
 bool Renderer::Shared::Init(Renderer& owner, std::string* error) {
-    Ptr<ID3DBlob> lvs, lps, mvs, mps, fps, svs, cvs, cps, kvs, ksvs;
+    Ptr<ID3DBlob> lvs, lps, mvs, mps, fps, svs, cvs, cps, kvs, ksvs, dvs, dsvs;
     if (!Compile("LineVS", "vs_4_0", lvs, error) || !Compile("LinePS", "ps_4_0", lps, error) || !Compile("MeshVS", "vs_4_0", mvs, error) ||
         !Compile("MeshPS", "ps_4_0", mps, error) || !Compile("FloorPS", "ps_4_0", fps, error) || !Compile("ShadowVS", "vs_4_0", svs, error) ||
         !Compile("ClearVS", "vs_4_0", cvs, error) || !Compile("CopyDepthPS", "ps_4_0", cps, error) ||
-        !Compile("SkinnedMeshVS", "vs_4_0", kvs, error) || !Compile("SkinnedShadowVS", "vs_4_0", ksvs, error)) {
+        !Compile("SkinnedMeshVS", "vs_4_0", kvs, error) || !Compile("SkinnedShadowVS", "vs_4_0", ksvs, error) ||
+        !Compile("DeformedMeshVS", "vs_4_0", dvs, error) || !Compile("DeformedShadowVS", "vs_4_0", dsvs, error)) {
         return false;
     }
     auto fail = [&](const char* what) {
@@ -236,7 +238,9 @@ bool Renderer::Shared::Init(Renderer& owner, std::string* error) {
         FAILED(device->CreatePixelShader(cps->GetBufferPointer(), cps->GetBufferSize(), nullptr, &copyPs)) ||
         FAILED(device->CreateVertexShader(mvs->GetBufferPointer(), mvs->GetBufferSize(), nullptr, &meshVs)) ||
         FAILED(device->CreateVertexShader(kvs->GetBufferPointer(), kvs->GetBufferSize(), nullptr, &skinnedMeshVs)) ||
-        FAILED(device->CreateVertexShader(ksvs->GetBufferPointer(), ksvs->GetBufferSize(), nullptr, &skinnedShadowVs))) {
+        FAILED(device->CreateVertexShader(ksvs->GetBufferPointer(), ksvs->GetBufferSize(), nullptr, &skinnedShadowVs)) ||
+        FAILED(device->CreateVertexShader(dvs->GetBufferPointer(), dvs->GetBufferSize(), nullptr, &deformedMeshVs)) ||
+        FAILED(device->CreateVertexShader(dsvs->GetBufferPointer(), dsvs->GetBufferSize(), nullptr, &deformedShadowVs))) {
         return fail("シェーダー");
     }
     const D3D11_INPUT_ELEMENT_DESC lineIn[] = {
@@ -470,9 +474,15 @@ bool Renderer::Init(ID3D11Device* device, std::string* error) {
     morphCb_.Reset();
     morphActiveView_.Reset();
     morphActiveCapacity_ = 0;
-    morphPool_.clear();
+    deformJobs_.Reset();
+    deformJobsView_.Reset();
+    deformJobsCapacity_ = 0;
+    deformed_.Reset();
+    deformedView_.Reset();
+    deformedUav_.Reset();
+    deformedCapacity_ = 0;
     if (device && device->GetFeatureLevel() >= D3D_FEATURE_LEVEL_11_0) {
-        // ブレンドシェイプの Compute Shader (できなければ、形を動かさずに描く: 止めない)。
+        // ブレンドシェイプとスキニングの Compute Shader (できなければ、形を動かさずに・骨は頂点シェーダーで描く: 止めない)。
         Ptr<ID3DBlob> cs;
         std::string why;
         if (Compile(kMorphCsHlsl, "morph", "MorphCS", "cs_5_0", cs, &why) &&
@@ -571,7 +581,8 @@ std::shared_ptr<const GpuMesh> Renderer::Upload(const MeshData& mesh, std::strin
     bd.BindFlags = D3D11_BIND_VERTEX_BUFFER;
     // ブレンドシェイプのあるメッシュ: Compute Shader が頂点を読めるように (生のバイトの口)。
     const bool morphs = !mesh.morphs.empty() && morphCs_ && mesh.skin;
-    if (morphs) {
+    const bool deformable = morphCs_ && mesh.skin;  // (Compute Shader のスキニング: 頂点とウェイトを読む)
+    if (deformable) {
         bd.BindFlags |= D3D11_BIND_SHADER_RESOURCE;
         bd.MiscFlags = D3D11_RESOURCE_MISC_BUFFER_ALLOW_RAW_VIEWS;
     }
@@ -614,8 +625,6 @@ std::shared_ptr<const GpuMesh> Renderer::Upload(const MeshData& mesh, std::strin
         if (FAILED(device_->CreateBuffer(&md, &mi, &gpu->morphDeltas)) || FAILED(device_->CreateShaderResourceView(gpu->morphDeltas.Get(), &sv, &gpu->morphView))) {
             return fail("ブレンドシェイプを GPU に載せられませんでした (メモリーが足りない?)");
         }
-        sv.BufferEx.NumElements = static_cast<UINT>(mesh.vertices.size() * sizeof(MeshVertex) / 4);
-        if (FAILED(device_->CreateShaderResourceView(gpu->vertices.Get(), &sv, &gpu->vertexView))) return fail("ブレンドシェイプの頂点の口を作れませんでした");
         gpu->morphCount = static_cast<uint32_t>(mesh.morphs.size());
     }
     bd.ByteWidth = static_cast<UINT>(mesh.indices.size() * sizeof(uint32_t));
@@ -624,9 +633,21 @@ std::shared_ptr<const GpuMesh> Renderer::Upload(const MeshData& mesh, std::strin
     if (FAILED(device_->CreateBuffer(&bd, &init, &gpu->indices))) return fail("インデックスを GPU に載せられませんでした (メモリーが足りない?)");
     if (mesh.skin) {
         bd.ByteWidth = static_cast<UINT>(mesh.skin->vertices.size() * sizeof(SkinVertex));
-        bd.BindFlags = D3D11_BIND_VERTEX_BUFFER;
+        bd.BindFlags = D3D11_BIND_VERTEX_BUFFER | (deformable ? D3D11_BIND_SHADER_RESOURCE : 0u);
+        bd.MiscFlags = deformable ? D3D11_RESOURCE_MISC_BUFFER_ALLOW_RAW_VIEWS : 0u;
         init.pSysMem = mesh.skin->vertices.data();
         if (FAILED(device_->CreateBuffer(&bd, &init, &gpu->skin))) return fail("骨のウェイトを GPU に載せられませんでした (メモリーが足りない?)");
+        bd.MiscFlags = 0;
+        if (deformable) {
+            D3D11_SHADER_RESOURCE_VIEW_DESC sv{};
+            sv.Format = DXGI_FORMAT_R32_TYPELESS;
+            sv.ViewDimension = D3D11_SRV_DIMENSION_BUFFEREX;
+            sv.BufferEx.Flags = D3D11_BUFFEREX_SRV_FLAG_RAW;
+            sv.BufferEx.NumElements = static_cast<UINT>(mesh.skin->vertices.size() * sizeof(SkinVertex) / 4);
+            if (FAILED(device_->CreateShaderResourceView(gpu->skin.Get(), &sv, &gpu->skinView))) return fail("骨のウェイトの口を作れませんでした");
+            sv.BufferEx.NumElements = static_cast<UINT>(mesh.vertices.size() * sizeof(MeshVertex) / 4);
+            if (FAILED(device_->CreateShaderResourceView(gpu->vertices.Get(), &sv, &gpu->vertexView))) return fail("頂点の口を作れませんでした");
+        }
         gpu->skinned = true;
         gpu->boneCount = static_cast<uint32_t>(mesh.skin->skeleton.bones.size());
         gpu->boneBoxes = BoneBoxes(*mesh.skin);
@@ -962,9 +983,9 @@ uint32_t Renderer::AddMaterial(const DrawMaterial& m) {
 
 uint64_t NextPoseVersion() { return ++g_poseVersion; }
 
-uint32_t Renderer::AddDraw(uint32_t thing, uint32_t material, uint32_t bones) {
+uint32_t Renderer::AddDraw(uint32_t thing, uint32_t material, uint32_t bones, uint32_t deform) {
     const auto slot = static_cast<uint32_t>(draws_.size() / kDrawUints);
-    draws_.insert(draws_.end(), {thing, material, bones, 0u});
+    draws_.insert(draws_.end(), {thing, material, bones, deform});
     return slot;
 }
 
@@ -1023,130 +1044,98 @@ uint32_t Renderer::PictureSet(const DrawMaterial* m) {
     return it->second;
 }
 
-const GpuMesh* Renderer::Morphed(ID3D11DeviceContext* ctx, const GpuMesh& mesh, std::span<const float> weights, size_t slot) {
-    // 重みの付いた形 (重み 0 は飛ばす)。無ければ差し替えない。
-    std::vector<std::array<uint32_t, 4>> active;
-    float reach = 0;
-    for (size_t k = 0; k < weights.size() && k < mesh.morphRanges.size(); ++k) {
-        const float w = weights[k];
-        const GpuMesh::MorphRange& r = mesh.morphRanges[k];
-        if (w == 0 || !std::isfinite(w) || r.count == 0) continue;
-        uint32_t bits = 0;
-        std::memcpy(&bits, &w, 4);
-        active.push_back({r.first, r.count, r.offset, bits});
-        reach += std::fabs(w) * (k < mesh.morphReach.size() ? mesh.morphReach[k] : 0.f);
-    }
-    if (active.empty() || !morphCs_ || !mesh.vertexView || !mesh.morphView) return nullptr;
-    // 形の重みの表 (足りなければ大きくする)。
-    if (active.size() > morphActiveCapacity_) {
-        morphActive_.Reset();
-        morphActiveView_.Reset();
-        const size_t cap = std::max<size_t>(64, active.size() * 2);
-        D3D11_BUFFER_DESC ad{};
-        ad.Usage = D3D11_USAGE_DEFAULT;
-        ad.ByteWidth = static_cast<UINT>(cap * 16);
-        ad.BindFlags = D3D11_BIND_SHADER_RESOURCE;
+bool Renderer::ReserveDeform() {
+    // 動かした頂点の置き場所 (頂点 1 つに float4 2 つ)・形の重みの表・仕事の表。足りなければ大きくする (使い回す)。
+    // (`uav`: 書く口も作るか。ComPtr の & は中身を手放すので、口は deformedUav_ を直に指す。)
+    auto grow = [&](Ptr<ID3D11Buffer>& buf, Ptr<ID3D11ShaderResourceView>& view, size_t& capacity, size_t need, DXGI_FORMAT format, bool uav) {
+        if (need <= capacity && buf) return true;
+        buf.Reset();
+        view.Reset();
+        if (uav) deformedUav_.Reset();
+        const size_t cap = std::max<size_t>(64, need + need / 2);
+        D3D11_BUFFER_DESC bd{};
+        bd.Usage = D3D11_USAGE_DEFAULT;
+        bd.ByteWidth = static_cast<UINT>(cap * 16);
+        bd.BindFlags = D3D11_BIND_SHADER_RESOURCE | (uav ? D3D11_BIND_UNORDERED_ACCESS : 0u);
         D3D11_SHADER_RESOURCE_VIEW_DESC sv{};
-        sv.Format = DXGI_FORMAT_R32G32B32A32_UINT;
+        sv.Format = format;
         sv.ViewDimension = D3D11_SRV_DIMENSION_BUFFER;
         sv.Buffer.NumElements = static_cast<UINT>(cap);
-        if (FAILED(device_->CreateBuffer(&ad, nullptr, &morphActive_)) || FAILED(device_->CreateShaderResourceView(morphActive_.Get(), &sv, &morphActiveView_))) {
-            morphActiveCapacity_ = 0;
-            return nullptr;
+        if (FAILED(device_->CreateBuffer(&bd, nullptr, &buf)) || FAILED(device_->CreateShaderResourceView(buf.Get(), &sv, &view))) {
+            capacity = 0;
+            return false;
         }
-        morphActiveCapacity_ = cap;
-    }
-    // この描画の、形を足した頂点の置き場所 (使い回す)。
-    if (morphPool_.size() <= slot) morphPool_.resize(slot + 1);
-    MorphOut& out = morphPool_[slot];
-    const uint32_t bytes = mesh.vertexCount * static_cast<uint32_t>(sizeof(MeshVertex));
-    if (!out.buffer || out.bytes < bytes) {
-        out = {};
-        D3D11_BUFFER_DESC od{};
-        od.Usage = D3D11_USAGE_DEFAULT;
-        od.ByteWidth = bytes;
-        od.BindFlags = D3D11_BIND_VERTEX_BUFFER | D3D11_BIND_UNORDERED_ACCESS;
-        od.MiscFlags = D3D11_RESOURCE_MISC_BUFFER_ALLOW_RAW_VIEWS;
-        D3D11_UNORDERED_ACCESS_VIEW_DESC uv{};
-        uv.Format = DXGI_FORMAT_R32_TYPELESS;
-        uv.ViewDimension = D3D11_UAV_DIMENSION_BUFFER;
-        uv.Buffer.NumElements = bytes / 4;
-        uv.Buffer.Flags = D3D11_BUFFER_UAV_FLAG_RAW;
-        if (FAILED(device_->CreateBuffer(&od, nullptr, &out.buffer)) || FAILED(device_->CreateUnorderedAccessView(out.buffer.Get(), &uv, &out.uav))) {
-            out = {};
-            return nullptr;
+        if (uav) {
+            D3D11_UNORDERED_ACCESS_VIEW_DESC uv{};
+            uv.Format = format;
+            uv.ViewDimension = D3D11_UAV_DIMENSION_BUFFER;
+            uv.Buffer.NumElements = static_cast<UINT>(cap);
+            if (FAILED(device_->CreateUnorderedAccessView(buf.Get(), &uv, deformedUav_.ReleaseAndGetAddressOf()))) {
+                capacity = 0;
+                return false;
+            }
         }
-        out.bytes = bytes;
-    }
-    const D3D11_BOX box{0, 0, 0, static_cast<UINT>(active.size() * 16), 1, 1};
-    ctx->UpdateSubresource(morphActive_.Get(), 0, &box, active.data(), 0, 0);
-    const uint32_t cb[4] = {mesh.vertexCount, static_cast<uint32_t>(active.size()), 0, 0};
-    ctx->UpdateSubresource(morphCb_.Get(), 0, nullptr, cb, 0, 0);
-    ID3D11ShaderResourceView* views[3] = {mesh.vertexView.Get(), mesh.morphView.Get(), morphActiveView_.Get()};
-    ID3D11UnorderedAccessView* uav = out.uav.Get();
-    ID3D11Buffer* cbuf = morphCb_.Get();
-    ctx->CSSetShader(morphCs_.Get(), nullptr, 0);
-    ctx->CSSetShaderResources(0, 3, views);
-    ctx->CSSetUnorderedAccessViews(0, 1, &uav, nullptr);
-    ctx->CSSetConstantBuffers(0, 1, &cbuf);
-    ctx->Dispatch((mesh.vertexCount + 63) / 64, 1, 1);
-    ID3D11ShaderResourceView* noViews[3] = {};
-    ID3D11UnorderedAccessView* noUav = nullptr;
-    ctx->CSSetShaderResources(0, 3, noViews);
-    ctx->CSSetUnorderedAccessViews(0, 1, &noUav, nullptr);
-    ctx->CSSetShader(nullptr, nullptr, 0);
-    // 元のメッシュの写し: 頂点だけ差し替え、範囲は形の分だけ広げる。
-    if (!out.mesh) out.mesh = std::make_shared<GpuMesh>();
-    GpuMesh& m = *out.mesh;
-    const uint64_t serial = m.serial != 0 ? m.serial : ++g_meshSerial;
-    m = mesh;
-    m.serial = serial;
-    m.vertices = out.buffer;
-    m.vertexView.Reset();
-    m.morphView.Reset();
-    m.morphCount = 0;
-    m.min = {m.min.x - reach, m.min.y - reach, m.min.z - reach};
-    m.max = {m.max.x + reach, m.max.y + reach, m.max.z + reach};
-    for (BoneBox& b : m.boneBoxes) {
-        for (Vec3& h : b.half) {
-            const float len = Length(h);
-            if (len > 1e-6f) h = h * ((len + reach) / len);
-        }
-    }
-    ++stats_.morphedDraws;
-    return out.mesh.get();
+        capacity = cap;
+        return true;
+    };
+    return grow(deformed_, deformedView_, deformedCapacity_, size_t{deformedVertices_} * 2, DXGI_FORMAT_R32G32B32A32_FLOAT, true) &&
+           grow(morphActive_, morphActiveView_, morphActiveCapacity_, std::max<size_t>(1, deformActive_.size()), DXGI_FORMAT_R32G32B32A32_UINT, false) &&
+           grow(deformJobs_, deformJobsView_, deformJobsCapacity_, deformList_.size(), DXGI_FORMAT_R32G32B32A32_UINT, false);
 }
 
-const RenderFrame& Renderer::PrepareMorphs(ID3D11DeviceContext* ctx, const RenderFrame& in, RenderFrame& scratch) {
-    bool any = false;
-    for (const MeshDraw& d : in.meshes) any = any || (d.mesh && d.mesh->morphCount > 0 && !d.morphWeights.empty());
-    if (!any || !morphCs_) return in;
-    morphDraws_.assign(in.meshes.begin(), in.meshes.end());
-    size_t slot = 0;
-    for (MeshDraw& d : morphDraws_) {
-        if (!d.mesh || d.mesh->morphCount == 0 || d.morphWeights.empty()) continue;
-        if (const GpuMesh* m = Morphed(ctx, *d.mesh, d.morphWeights, slot)) {
-            d.mesh = m;
-            d.moving = true;  // (形が変わるかもしれない: 影の地図はそのつど描く)
-            ++slot;
-        }
+void Renderer::Deform(ID3D11DeviceContext* ctx) {
+    // 同じメッシュの仕事を並べ、メッシュごとに 1 回の Dispatch (x: 頂点 64 個ずつ、y: そのメッシュの描画)。
+    std::stable_sort(deformList_.begin(), deformList_.end(), [](const DeformJob& x, const DeformJob& y) { return x.mesh->serial < y.mesh->serial; });
+    std::vector<std::array<uint32_t, 4>> jobs;
+    jobs.reserve(deformList_.size());
+    for (const DeformJob& j : deformList_) jobs.push_back({j.activeFirst, j.activeCount, j.bones, j.out});
+    const D3D11_BOX jobBox{0, 0, 0, static_cast<UINT>(jobs.size() * 16), 1, 1};
+    ctx->UpdateSubresource(deformJobs_.Get(), 0, &jobBox, jobs.data(), 0, 0);
+    if (!deformActive_.empty()) {
+        const D3D11_BOX activeBox{0, 0, 0, static_cast<UINT>(deformActive_.size() * 16), 1, 1};
+        ctx->UpdateSubresource(morphActive_.Get(), 0, &activeBox, deformActive_.data(), 0, 0);
     }
-    scratch = in;
-    scratch.meshes = morphDraws_;
-    return scratch;
+    ID3D11ShaderResourceView* noVs = nullptr;
+    ctx->VSSetShaderResources(11, 1, &noVs);  // (前のフレームの置き場所を読む口を外してから書く)
+    ID3D11UnorderedAccessView* uav = deformedUav_.Get();
+    ID3D11Buffer* cbuf = morphCb_.Get();
+    ctx->CSSetShader(morphCs_.Get(), nullptr, 0);
+    ctx->CSSetUnorderedAccessViews(0, 1, &uav, nullptr);
+    ctx->CSSetConstantBuffers(0, 1, &cbuf);
+    for (size_t first = 0; first < deformList_.size();) {
+        const GpuMesh& mesh = *deformList_[first].mesh;
+        size_t end = first + 1;
+        while (end < deformList_.size() && deformList_[end].mesh == &mesh && end - first < 65535) ++end;
+        const uint32_t cb[4] = {mesh.vertexCount, static_cast<uint32_t>(first), 0, 0};
+        ctx->UpdateSubresource(morphCb_.Get(), 0, nullptr, cb, 0, 0);
+        ID3D11ShaderResourceView* views[6] = {mesh.vertexView.Get(), mesh.morphView ? mesh.morphView.Get() : mesh.vertexView.Get(), morphActiveView_.Get(),
+                                              mesh.skinView.Get(), bonesView_.Get(), deformJobsView_.Get()};
+        ctx->CSSetShaderResources(0, 6, views);
+        ctx->Dispatch((mesh.vertexCount + 63) / 64, static_cast<UINT>(end - first), 1);
+        ++stats_.deformDispatches;
+        first = end;
+    }
+    ID3D11ShaderResourceView* noViews[6] = {};
+    ID3D11UnorderedAccessView* noUav = nullptr;
+    ctx->CSSetShaderResources(0, 6, noViews);
+    ctx->CSSetUnorderedAccessViews(0, 1, &noUav, nullptr);
+    ctx->CSSetShader(nullptr, nullptr, 0);
 }
 
 ID3D11Texture2D* Renderer::Render(ID3D11DeviceContext* ctx, const RenderFrame& frame) {
     if (!Ready() || frame.width == 0 || frame.height == 0 || !Resize(frame.width, frame.height)) return nullptr;
     Shared& s = *shared_;
     stats_ = Stats{};
-    RenderFrame morphScratch;
-    const RenderFrame& f = PrepareMorphs(ctx, frame, morphScratch);
+    const RenderFrame& f = frame;
 
     // 塗ったものすべて: 箱とモデル (それぞれ自分の場所と色)。骨のあるモデルは、そのスキンの行列を
-    // フレームの骨の行列 (bones_) に足す (描画が DRAW.z で指す)。(stats_ は形を足す前に空にした)
+    // フレームの骨の行列 (bones_) に足す (描画が DRAW.z で指す)。形の重みのある物・Compute Shader で骨を掛ける物は
+    // 頂点を動かす仕事 (deformList_) にして、動かした頂点の置き場所の番号を DRAW.w で指す。
     items_.clear();
     bones_.clear();
+    deformList_.clear();
+    deformActive_.clear();
+    deformedVertices_ = 0;
     for (const Box& b : f.boxes) {
         items_.push_back({s.cube.get(), &b.world, b.color, b.castShadow, {}, {0, 0, 0, 0}});
         items_.back().moving = b.moving;
@@ -1161,13 +1150,53 @@ ID3D11Texture2D* Renderer::Render(ID3D11DeviceContext* ctx, const RenderFrame& f
         if (!m.bones.empty() && m.bones.size() != m.mesh->boneCount) ++stats_.wrongBoneCounts;  // (休みの姿勢で描く)
         if (!m.mesh->skinned) continue;
         ++stats_.skinnedDraws;
-        if (m.bones.empty() || m.bones.size() != m.mesh->boneCount) continue;
-        it.bones = static_cast<uint32_t>(bones_.size() * 3);
-        bones_.insert(bones_.end(), m.bones.begin(), m.bones.end());
-        it.skin = m.bones;
-        // 姿勢の版が無い: 毎フレーム変わるかもしれない (動くもの。その影は毎フレーム描く - 2 度出ない番号)。
-        it.pose = m.poseVersion != 0 ? m.poseVersion : NextPoseVersion();
-        if (m.poseVersion == 0) it.moving = true;
+        // 重みの付いた形 (重み 0 は飛ばす)。見えるかの判定は、その差の長さだけ広げる。
+        const size_t activeFirst = deformActive_.size();
+        if (morphCs_ && m.mesh->morphView && m.mesh->vertexView) {
+            for (size_t k = 0; k < m.morphWeights.size() && k < m.mesh->morphRanges.size(); ++k) {
+                const float w = m.morphWeights[k];
+                const GpuMesh::MorphRange& r = m.mesh->morphRanges[k];
+                if (w == 0 || !std::isfinite(w) || r.count == 0) continue;
+                uint32_t bits = 0;
+                std::memcpy(&bits, &w, 4);
+                deformActive_.push_back({r.first, r.count, r.offset, bits});
+                it.reach += std::fabs(w) * (k < m.mesh->morphReach.size() ? m.mesh->morphReach[k] : 0.f);
+            }
+        }
+        const auto activeCount = static_cast<uint32_t>(deformActive_.size() - activeFirst);
+        const bool posed = !m.bones.empty() && m.bones.size() == m.mesh->boneCount;
+        uint32_t boneRow = kNoBones;
+        if (posed) {
+            it.skin = m.bones;  // (見えるかの判定)
+            boneRow = static_cast<uint32_t>(bones_.size() * 3);
+            bones_.insert(bones_.end(), m.bones.begin(), m.bones.end());
+            // 姿勢の版が無い: 毎フレーム変わるかもしれない (動くもの。その影は毎フレーム描く - 2 度出ない番号)。
+            it.pose = m.poseVersion != 0 ? m.poseVersion : NextPoseVersion();
+            if (m.poseVersion == 0) it.moving = true;
+        }
+        const bool csSkin = posed && ComputeSkinning() && m.mesh->skinView && m.mesh->vertexView;
+        it.bones = csSkin ? kNoBones : boneRow;
+        if (activeCount > 0 || csSkin) {
+            it.deform = deformedVertices_;
+            deformList_.push_back({m.mesh, static_cast<uint32_t>(activeFirst), activeCount, csSkin ? boneRow : kNoBones, deformedVertices_});
+            deformedVertices_ += m.mesh->vertexCount;
+            it.csBones = csSkin ? boneRow : kNoBones;
+            if (activeCount > 0) {
+                it.moving = true;  // (形が変わるかもしれない: 影の地図はそのつど描く。骨だけなら姿勢の版で決まる)
+                ++stats_.morphedDraws;
+            }
+            if (csSkin) ++stats_.computeSkinned;
+        }
+    }
+    // 置き場所が作れない (メモリーが足りない?): 形を動かさず、骨は頂点シェーダーで (描くのは止めない)。
+    if (!deformList_.empty() && !ReserveDeform()) {
+        for (Item& it : items_) {
+            if (it.deform == kNoBones) continue;
+            it.deform = kNoBones;
+            if (it.csBones != kNoBones) it.bones = it.csBones;
+        }
+        deformList_.clear();
+        stats_.morphedDraws = stats_.computeSkinned = 0;
     }
     stats_.bonesUploaded = bones_.size();
     // カリング (常に): カメラの視界の完全に外にあるものは、絵から外す。骨で動いているものは、骨ごとの
@@ -1177,9 +1206,10 @@ ID3D11Texture2D* Renderer::Render(ID3D11DeviceContext* ctx, const RenderFrame& f
     const Frustum camera = FrustumOf(viewProj);
     for (Item& it : items_) {
         Vec3 lo = it.mesh->min, hi = it.mesh->max;
-        if (it.bones != kNoBones) {
+        if (!it.skin.empty()) {
             if (const std::optional<Bounds> posed = SkinnedBounds(it.skin, it.mesh->boneBoxes)) lo = posed->min, hi = posed->max;
         }
+        if (it.reach > 0) lo = lo - Vec3{it.reach, it.reach, it.reach}, hi = hi + Vec3{it.reach, it.reach, it.reach};
         it.bounds = WorldBounds(*it.world, lo, hi);
         it.seen = BoxInFrustum(camera, it.bounds);
         if (it.seen) ++stats_.drawn;
@@ -1244,7 +1274,7 @@ ID3D11Texture2D* Renderer::Render(ID3D11DeviceContext* ctx, const RenderFrame& f
     };
     auto partDraw = [&](const Item& it, const MeshPart& part) {
         const auto k = static_cast<uint32_t>(&part - it.mesh->parts.data());
-        Emit(it.mesh, part.firstIndex, part.indexCount, AddDraw(it.thing, it.firstMaterial + k * kMaterialFloat4s, it.bones), &materialOf(it, part));
+        Emit(it.mesh, part.firstIndex, part.indexCount, AddDraw(it.thing, it.firstMaterial + k * kMaterialFloat4s, it.bones, it.deform), &materialOf(it, part));
     };
 
     // 影を落とすものを、メッシュごとにまとめる (安定: DrawOrder.h)。全部のマップに対して 1 回。
@@ -1474,6 +1504,7 @@ ID3D11Texture2D* Renderer::Render(ID3D11DeviceContext* ctx, const RenderFrame& f
 
     // フレームの数を一度に GPU へ送る。
     if (!UploadFrame(ctx)) return nullptr;
+    if (!deformList_.empty()) Deform(ctx);  // (骨の行列を送った後: Compute Shader も bones_ を読む)
     FrameConstants fc{};
     CopyMatrix(fc.viewProj, viewProj);
     fc.eye[0] = eye.x, fc.eye[1] = eye.y, fc.eye[2] = eye.z;
@@ -1502,6 +1533,8 @@ ID3D11Texture2D* Renderer::Render(ID3D11DeviceContext* ctx, const RenderFrame& f
     ctx->VSSetShaderResources(6, 1, &thingsView);
     ctx->PSSetShaderResources(6, 1, &thingsView);
     ctx->VSSetShaderResources(10, 1, &bonesView);
+    ID3D11ShaderResourceView* deformedView = deformList_.empty() ? nullptr : deformedView_.Get();  // (DRAW.w: 動かした頂点)
+    ctx->VSSetShaderResources(11, 1, &deformedView);
     ctx->IASetInputLayout(s.meshLayout.Get());
     ctx->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
     {
@@ -1514,21 +1547,24 @@ ID3D11Texture2D* Renderer::Render(ID3D11DeviceContext* ctx, const RenderFrame& f
 
     // 描画を実行する: メッシュは変わったときに、絵は変わったときに結ぶ。各描画はそのインスタンスを
     // 全部一度に描く。頂点シェーダーと入力レイアウトはメッシュに骨があるかで選ぶ (`plainVs` /
-    // `skinnedVs`: そのパスのもの)。
+    // `skinnedVs` / `deformedVs` (Compute Shader で骨を掛けるとき): そのパスのもの)。
     const GpuMesh* bound = nullptr;
-    auto run = [&](size_t first, size_t end, bool painted, ID3D11VertexShader* plainVs, ID3D11VertexShader* skinnedVs) {
+    const bool csSkinning = ComputeSkinning();
+    auto run = [&](size_t first, size_t end, bool painted, ID3D11VertexShader* plainVs, ID3D11VertexShader* skinnedVs, ID3D11VertexShader* deformedVs) {
         const DrawMaterial* pictures = nullptr;
         bool any = false;
         ID3D11VertexShader* vsNow = nullptr;
         for (size_t k = first; k < end; ++k) {
             const Cmd& cmd = cmds_[k];
-            if (ID3D11VertexShader* vs = cmd.mesh->skinned ? skinnedVs : plainVs; vs != vsNow) {
+            const bool vsSkin = cmd.mesh->skinned && !csSkinning;  // (Compute Shader で掛けた物: 動かした頂点を読むだけ)
+            ID3D11VertexShader* vs = !cmd.mesh->skinned ? plainVs : vsSkin ? skinnedVs : deformedVs;
+            if (vs != vsNow) {
                 ctx->VSSetShader(vs, nullptr, 0);
-                ctx->IASetInputLayout(cmd.mesh->skinned ? s.skinnedLayout.Get() : s.meshLayout.Get());
+                ctx->IASetInputLayout(vsSkin ? s.skinnedLayout.Get() : s.meshLayout.Get());
                 vsNow = vs;
             }
             if (cmd.mesh != bound) {
-                BindMesh(ctx, cmd.mesh->vertices.Get(), cmd.mesh->indices.Get(), cmd.mesh->skin.Get());
+                BindMesh(ctx, cmd.mesh->vertices.Get(), cmd.mesh->indices.Get(), vsSkin ? cmd.mesh->skin.Get() : nullptr);
                 bound = cmd.mesh;
             }
             if (painted && (!any || !SamePictures(pictures, cmd.material))) {
@@ -1571,7 +1607,7 @@ ID3D11Texture2D* Renderer::Render(ID3D11DeviceContext* ctx, const RenderFrame& f
         auto drawCasters = [&](const MapWork& w) {
             CopyMatrix(fc.lightViewProj, w.viewProj);
             ctx->UpdateSubresource(frameCb, 0, nullptr, &fc, 0, 0);
-            run(w.first, w.end, false, s.shadowVs.Get(), s.skinnedShadowVs.Get());
+            run(w.first, w.end, false, s.shadowVs.Get(), s.skinnedShadowVs.Get(), s.deformedShadowVs.Get());
         };
         for (const MapWork& w : layers) {
             begin(w.maps->layerDsv.Get(), w);
@@ -1684,7 +1720,7 @@ ID3D11Texture2D* Renderer::Render(ID3D11DeviceContext* ctx, const RenderFrame& f
     ID3D11ShaderResourceView* surfaceSrv = f.surface ? f.surface->texture : nullptr;
     ctx->PSSetShaderResources(10, 1, &surfaceSrv);  // (面の手の絵。無い: 外す)
     ctx->PSSetShader(meshPs, nullptr, 0);
-    run(opaqueFirst, opaqueEnd, true, s.meshVs.Get(), s.skinnedMeshVs.Get());
+    run(opaqueFirst, opaqueEnd, true, s.meshVs.Get(), s.skinnedMeshVs.Get(), s.deformedMeshVs.Get());
     // プラグインが固い物として描くもの (RenderFrame::solids: 天候の雪)。モデルと同じに光を当てる。
     // その後、こちらのものをもう一度設定する。
     if (!f.solids.empty()) {
@@ -1709,6 +1745,7 @@ ID3D11Texture2D* Renderer::Render(ID3D11DeviceContext* ctx, const RenderFrame& f
         ctx->VSSetShaderResources(6, 1, &thingsView);
         ctx->PSSetShaderResources(6, 1, &thingsView);
         ctx->VSSetShaderResources(10, 1, &bonesView);
+        ctx->VSSetShaderResources(11, 1, &deformedView);
         ctx->PSSetShader(meshPs, nullptr, 0);
         bound = nullptr;
     }
@@ -1718,7 +1755,7 @@ ID3D11Texture2D* Renderer::Render(ID3D11DeviceContext* ctx, const RenderFrame& f
         ctx->OMSetDepthStencilState(s.depthNoWrite.Get(), 0);
         ctx->RSSetState(s.floorRaster.Get());  // 少し奥へ: 床と同じ高さの物 (平面) があれば、その物の影だけが見える
         ctx->PSSetShader(s.floorPs.Get(), nullptr, 0);
-        run(opaqueEnd, floorEnd, false, s.meshVs.Get(), s.skinnedMeshVs.Get());
+        run(opaqueEnd, floorEnd, false, s.meshVs.Get(), s.skinnedMeshVs.Get(), s.deformedMeshVs.Get());
         ctx->RSSetState(s.raster.Get());
         ctx->OMSetDepthStencilState(s.depth.Get(), 0);
     }
@@ -1750,7 +1787,7 @@ ID3D11Texture2D* Renderer::Render(ID3D11DeviceContext* ctx, const RenderFrame& f
         ctx->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
         ctx->OMSetDepthStencilState(s.depthNoWrite.Get(), 0);
         ctx->PSSetShader(meshPs, nullptr, 0);
-        run(floorEnd, seeThroughEnd, true, s.meshVs.Get(), s.skinnedMeshVs.Get());
+        run(floorEnd, seeThroughEnd, true, s.meshVs.Get(), s.skinnedMeshVs.Get(), s.deformedMeshVs.Get());
         ctx->OMSetDepthStencilState(s.depth.Get(), 0);
     }
 

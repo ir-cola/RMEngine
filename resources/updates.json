@@ -3,6 +3,16 @@
   "format": 1,
   "updates": [
     {
+      "version": "0.0.43",
+      "date": "2026-11-28",
+      "items": [
+        {
+          "ja": "骨のアニメーションのスキニングを Compute Shader で 1 フレームに 1 回に: 影の地図を何枚描いても骨の計算は 1 回で、同じモデルはまとめて描いたままです",
+          "en": "Skinning now runs once per frame in a compute shader: bones are applied once however many shadow maps are drawn, and characters with the same model are still drawn together"
+        }
+      ]
+    },
+    {
       "version": "0.0.42",
       "date": "2026-11-27",
       "items": [

@@ -113,15 +113,31 @@ MeshOut MeshVS(MeshIn i) {
 // _UNORM)。式は Skinning.h (CPU の同じもの。テストが比べる) と同じ。
 Buffer<float4> bones : register(t10);
 static const uint kNoBones = 0xFFFFFFFF;
+// Compute Shader で動かした頂点 (MorphCS の置き場所。DRAW.w が最初の頂点、kNoBones: メッシュの頂点のまま)。
+// 頂点 1 つに float4 2 つ: (位置, 法線 x) (法線 y z, 0, 0)。
+Buffer<float4> deformed : register(t11);
+MeshIn Deformed(MeshIn i, uint vid) {
+    if (i.draw.w == kNoBones) return i;
+    const uint at = (i.draw.w + vid) * 2;
+    const float4 a = deformed.Load(at), b = deformed.Load(at + 1);
+    i.pos = a.xyz;
+    i.nrm = float3(a.w, b.x, b.y);
+    return i;
+}
+MeshOut DeformedMeshVS(MeshIn i, uint vid : SV_VertexID) { return MeshVS(Deformed(i, vid)); }
 struct SkinnedMeshIn { float3 pos : POSITION; float3 nrm : NORMAL; float2 uv : TEXCOORD0; uint4 draw : DRAW; uint4 bone : BONES; float4 weight : WEIGHTS; };
 // 骨で動かした頂点 (モデルの空間): ウェイトで混ぜた 3x4 の行列 (Skinning.h の SkinMatrix) を掛ける。
 // 法線は 3x3 の部分で動かし、長さ 1 に直す (接線はピクセルシェーダーが作るので要らない)。
-MeshIn Skin(SkinnedMeshIn i) {
+// 形を足した頂点 (DRAW.w) があれば、それから。
+MeshIn Skin(SkinnedMeshIn i, uint vid) {
     MeshIn o;
     o.pos = i.pos;
     o.nrm = i.nrm;
     o.uv = i.uv;
     o.draw = i.draw;
+    o = Deformed(o, vid);
+    i.pos = o.pos;
+    i.nrm = o.nrm;
     if (i.draw.z == kNoBones) return o;  // 休みの姿勢 (骨の行列を渡されなかった)
     float4 r0 = 0, r1 = 0, r2 = 0;
     [unroll] for (int k = 0; k < 4; ++k) {
@@ -136,7 +152,7 @@ MeshIn Skin(SkinnedMeshIn i) {
     o.nrm = dot(n, n) > 1e-20 ? normalize(n) : i.nrm;
     return o;
 }
-MeshOut SkinnedMeshVS(SkinnedMeshIn i) { return MeshVS(Skin(i)); }
+MeshOut SkinnedMeshVS(SkinnedMeshIn i, uint vid : SV_VertexID) { return MeshVS(Skin(i, vid)); }
 
 // 1 = 光が当たる、0 = 影: `maps` のマップ `tile` (タイルは `grid` 列 x 行に並ぶ) の p での値
 // (割り算の後: x, y -1..1、深度 0..1)。3 x 3 回見る。1 回ごとに 2 x 2 テクセルをすでに混ぜている
@@ -321,7 +337,8 @@ float4 ShadowVS(MeshIn i) : SV_Position {
     LoadPlace(i.draw.x);
     return mul(lightViewProj, mul(world, float4(i.pos, 1)));
 }
-float4 SkinnedShadowVS(SkinnedMeshIn i) : SV_Position { return ShadowVS(Skin(i)); }
+float4 SkinnedShadowVS(SkinnedMeshIn i, uint vid : SV_VertexID) : SV_Position { return ShadowVS(Skin(i, vid)); }
+float4 DeformedShadowVS(MeshIn i, uint vid : SV_VertexID) : SV_Position { return ShadowVS(Deformed(i, vid)); }
 
 // シャドウマップのタイルを、残しておいた層 (動かないもの: 別のテクスチャの同じタイル) から
 // そのまま敷き戻す。動くものを上に描く前に行う。ClearVS の三角形で描く。
@@ -343,30 +360,38 @@ void Surface(inout float3 albedo, inout float rough, float metal, float3 wpos, f
 
 }  // namespace
 
-// ブレンドシェイプ (docs/ANIMATION.md 7-2-2): 重みの付いた形を足した頂点を作る Compute Shader (cs_5_0)。
-// 頂点 1 つに 1 本のスレッド。形ごとに「動く頂点の範囲 (最初・数)」と差 (位置 3・法線 3 の float) の場所と重みを
+// ブレンドシェイプとスキニング (docs/ANIMATION.md 7-2-2・7-3): 頂点を 1 フレームに 1 回動かす Compute Shader (cs_5_0)。
+// 頂点 1 つに 1 本のスレッド。1. 形: 形ごとに「動く頂点の範囲 (最初・数)」と差 (位置 3・法線 3 の float) の場所と重みを
 // active で受け取り、範囲に入っていれば 重み x 差 を足す。法線は足した後に長さを 1 に (space3d::MorphVertex と同じ式)。
+// 2. 骨 (仕事の z が kNoBones でない): 頂点の骨 4 本とウェイト (SkinVertex: u16 x 4 + unorm16 x 4) で、骨の行列 (3x4) を
+// 混ぜて掛ける (頂点シェーダーの Skin と同じ式)。1 回の Dispatch が 1 つのメッシュの描画全部 (y が仕事の番号)。
+// 結果はフレームの置き場所の 仕事の w + 頂点の番号 に (float4 2 つ)。描くときは DeformedMeshVS / DeformedShadowVS が
+// 読むだけ (影の地図を何回描いてもスキニングは 1 回)。
 const char kMorphCsHlsl[] = R"(
 ByteAddressBuffer baseVertices : register(t0);   // MeshVertex (位置 3・法線 3・UV 2 の float = 32 バイト)
 ByteAddressBuffer deltas : register(t1);         // 形の差 (頂点ごとに位置 3・法線 3 の float)
 Buffer<uint4> active : register(t2);             // 形ごと: 最初の頂点・頂点の数・差の場所 (float の番号)・重み (asuint)
-RWByteAddressBuffer outVertices : register(u0);
+ByteAddressBuffer skinWeights : register(t3);    // SkinVertex (16 バイト / 頂点)
+Buffer<float4> skinBones : register(t4);          // フレームの骨の行列 (3 つの float4 で 1 本。頂点シェーダーの bones と同じ)
+Buffer<uint4> jobs : register(t5);                // 描画ごと: 形の表の最初・形の数・骨の行列の行 (kNoBones: 掛けない)・置き場所の最初の頂点
+RWBuffer<float4> outVertices : register(u0);
+static const uint kNoBones = 0xFFFFFFFF;
 cbuffer MorphFrame : register(b0) {
     uint vertexCount;
-    uint activeCount;
+    uint jobFirst;
     uint2 morphPad;
 };
 [numthreads(64, 1, 1)]
-void MorphCS(uint3 id : SV_DispatchThreadID) {
-    const uint v = id.x;
+void MorphCS(uint3 group : SV_GroupID, uint3 thread : SV_GroupThreadID) {
+    const uint v = group.x * 64 + thread.x;
     if (v >= vertexCount) return;
+    const uint4 job = jobs[jobFirst + group.y];
     const uint at = v * 32;
     float3 p = asfloat(baseVertices.Load3(at));
     float3 n = asfloat(baseVertices.Load3(at + 12));
-    const uint2 uv = baseVertices.Load2(at + 24);
     float3 dn = float3(0, 0, 0);
     bool bent = false;
-    for (uint k = 0; k < activeCount; ++k) {
+    for (uint k = job.x; k < job.x + job.y; ++k) {
         const uint4 a = active[k];
         if (v < a.x || v >= a.x + a.y) continue;
         const float w = asfloat(a.w);
@@ -383,9 +408,25 @@ void MorphCS(uint3 id : SV_DispatchThreadID) {
         const float len = length(m);
         if (len > 1e-6) n = m / len;
     }
-    outVertices.Store3(at, asuint(p));
-    outVertices.Store3(at + 12, asuint(n));
-    outVertices.Store2(at + 24, uv);
+    if (job.z != kNoBones) {
+        const uint4 sw = skinWeights.Load4(v * 16);
+        const uint bone[4] = {sw.x & 0xffff, sw.x >> 16, sw.y & 0xffff, sw.y >> 16};
+        const float weight[4] = {(sw.z & 0xffff) / 65535.0, (sw.z >> 16) / 65535.0, (sw.w & 0xffff) / 65535.0, (sw.w >> 16) / 65535.0};
+        float4 r0 = 0, r1 = 0, r2 = 0;
+        [unroll] for (int k = 0; k < 4; ++k) {
+            const uint b = job.z + bone[k] * 3;
+            r0 += weight[k] * skinBones[b];
+            r1 += weight[k] * skinBones[b + 1];
+            r2 += weight[k] * skinBones[b + 2];
+        }
+        const float4 h = float4(p, 1);
+        p = float3(dot(r0, h), dot(r1, h), dot(r2, h));
+        const float3 sn = float3(dot(r0.xyz, n), dot(r1.xyz, n), dot(r2.xyz, n));
+        if (dot(sn, sn) > 1e-20) n = normalize(sn);
+    }
+    const uint o = (job.w + v) * 2;
+    outVertices[o] = float4(p, n.x);
+    outVertices[o + 1] = float4(n.y, n.z, 0, 0);
 }
 )";
 

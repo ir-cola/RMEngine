@@ -1339,6 +1339,14 @@ plugins/            ソフトはプラグインで足す (いまは「ゲーム�
 - **なぜそれか** — Verlet は少ない計算で安定し、長さを保つ (位置を直すだけ) のと相性がよい。VRM と同じ式にしたので、VRoid のモデルの揺れを作り直さずに使える
 - **どこ** — `plugins/rm_engine/animation3d/runtime/Spring.*`・`game_x_animation/runtime/AnimatorSprings.*`・`Animator.h` (`SpringBones`)・`space3d/runtime/Skeleton.h` (`SpringChainSetting`)・`Mesh.cpp` (`ReadSprings`)・`MeshBake.*` (`SPRG`)、`tests/TestAnimation3d.cpp`・`TestGameAnimation.cpp`・`TestGltfSkin.cpp`・`TestMeshBake.cpp`
 
+### Compute Shader のスキニング (1 本の置き場所・まとめ描きのまま) (2026-11-28)
+
+- **何か** — 骨のあるメッシュの頂点に骨の行列を掛ける (スキニング) のを、描くたびの頂点シェーダーではなく、1 フレームに 1 回の Compute Shader (`cs_5_0`) でする。影の地図を何枚描いても、スキニングは 1 回
+- **作り** — レンダラーがフレームのはじめに「仕事の表」(描くもの 1 つに 1 行: 形の表の範囲・骨の行列の行・置き場所の最初の頂点) を作る。Compute Shader はメッシュごとに 1 回の `Dispatch` (x: 頂点 64 個ずつ、y: そのメッシュを使う描画) で、全員の動かした頂点 (位置と法線) を 1 本の大きな置き場所 (`RWBuffer<float4>`) に書く。描くときは、メッシュの頂点はそのままに、頂点シェーダーが「描画の番号 (DRAW.w) + 頂点の番号 (`SV_VertexID`)」でその置き場所を読む。だから同じモデルの 300 体は前と同じく 1 回のインスタンス描画のまま (最初に作った「体ごとに写しのメッシュを作る」やり方は、まとめ描きが切れて描画が 9 → 839 回になり、遅くなったのでやめた)
+- **気をつけたこと** — WRL の `ComPtr` に `&` を付けると中身を手放す (`ReleaseAndGetAddressOf`)。書く口 (UAV) を `&deformedUav_` で渡していたせいで、2 フレーム目から Compute Shader が何も書かず、前の姿勢のまま描いていた (テストで見つけた。口は `ReleaseAndGetAddressOf` で直に作る)
+- **数字** — `tools/benchanim` (300 体・影の地図 7 枚): RTX 4060 で GPU 4.1〜4.3 ms → 4.3〜4.4 ms、内蔵の GPU で 216〜250 ms → 214〜218 ms。この絵では差は小さい (画素の仕事が重い)
+- **どこ** — `space3d/runtime/Renderer3D.*` (`ReserveDeform`・`Deform`・`Item::deform`)・`RendererShaders.cpp` (`MorphCS`・`DeformedMeshVS`・`DeformedShadowVS`・`Deformed`)・`tools/benchanim` (`cs`・`igpu`)、`tests/TestSkinning.cpp`
+
 ### 作業の列 (std::jthread の小さなスレッドの組)・遠い物を間引く (画面の上の大きさ) (2026-11-27)
 
 - **何か** — `base/WorkQueue` は決まった数の作業スレッド (`std::jthread`。止めると自分で join する) が、`ParallelFor(n, fn)` の範囲を区切って並べて処理する小さな仕組み。呼んだスレッドも手伝い、全部終わるまで戻らない (区切りを渡すのも終わりを数えるのも `std::mutex` と `std::condition_variable` で。入れ子の呼び出しはそのスレッドで順に)。標準ライブラリだけなので、ゲームにも入る
@@ -1352,6 +1360,7 @@ plugins/            ソフトはプラグインで足す (いまは「ゲーム�
 | 日付 | 足したこと |
 |---|---|
 | 2026-11-27 | 作業の列 (std::jthread の小さなスレッドの組・ParallelFor)・遠い物を間引く (画面の上の大きさ)・アニメーションの計測 tools/benchanim |
+| 2026-11-28 | Compute Shader のスキニング (1 本の置き場所・SV_VertexID で読む・まとめ描きのまま)・ComPtr の & の落とし穴・性能の高い GPU を選ぶ (EnumAdapterByGpuPreference) |
 | 2026-11-27 | 揺れる骨 (Verlet・長さを保つ・球から押し出す・決まった刻み)・VRM の揺れの設定 (VRMC_springBone / secondaryAnimation) |
 | 2026-11-27 | ブレンドシェイプ (形の差を重みで足す・Compute Shader で頂点を作る: 生のバイトのバッファと UAV・FBX の BlendShape) |
 | 2026-11-27 | IK (2 本の骨を余弦定理で・回転を骨の空間へ戻す・足を坂に: 光線と高さのならし)・配列の要素の中のドロップダウン |

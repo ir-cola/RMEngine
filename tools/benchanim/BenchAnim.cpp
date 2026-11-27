@@ -6,6 +6,7 @@
 //
 //   threads: 姿勢を base の作業の列 (WorkQueue) で並べて作る (無し: 1 本のスレッド)
 //   cs:      スキニングを Compute Shader で 1 回だけ (無し: 頂点シェーダーで、影の地図を描くたびに)
+//   igpu:    Windows の既定の GPU で (無し: 性能の高い GPU。ノートの PC の別の GPU)
 //   lod:     遠い物の姿勢を 2 / 4 フレームに 1 回にする (画面の上の大きさで。PoseInterval)
 //
 // 1 フレームの「姿勢を作る CPU 時間」と「Render の CPU 時間」の平均、GPU の時間 (タイムスタンプのクエリ) の平均を出す。
@@ -18,6 +19,7 @@
 #include "rm_engine/space3d/runtime/View.h"
 
 #include <d3d11.h>
+#include <dxgi1_6.h>
 #include <wrl/client.h>
 
 #include <algorithm>
@@ -112,20 +114,34 @@ double Ms(std::chrono::steady_clock::duration d) { return std::chrono::duration<
 int main(int argc, char** argv) {
     const int frames = argc > 1 && std::atoi(argv[1]) > 0 ? std::atoi(argv[1]) : 300;
     const int count = argc > 2 && std::atoi(argv[2]) > 0 ? std::atoi(argv[2]) : 300;
-    bool threads = false, cs = false, lod = false;
+    bool threads = false, cs = false, lod = false, igpu = false;
     for (int i = 3; i < argc; ++i) {
         const std::string a = argv[i];
         threads = threads || a == "threads";
         cs = cs || a == "cs";
         lod = lod || a == "lod";
+        igpu = igpu || a == "igpu";
     }
     Microsoft::WRL::ComPtr<ID3D11Device> device;
     Microsoft::WRL::ComPtr<ID3D11DeviceContext> ctx;
     const D3D_FEATURE_LEVEL levels[] = {D3D_FEATURE_LEVEL_11_0};
-    if (FAILED(D3D11CreateDevice(nullptr, D3D_DRIVER_TYPE_HARDWARE, nullptr, D3D11_CREATE_DEVICE_BGRA_SUPPORT, levels, 1, D3D11_SDK_VERSION, &device,
-                                 nullptr, &ctx))) {
+    // GPU: 既定は性能の高いもの (ノートの PC の別の GPU)。オプション igpu: Windows の既定 (内蔵のことが多い)。
+    Microsoft::WRL::ComPtr<IDXGIAdapter1> fast;
+    if (!igpu) {
+        Microsoft::WRL::ComPtr<IDXGIFactory6> factory;
+        if (SUCCEEDED(CreateDXGIFactory1(IID_PPV_ARGS(&factory)))) factory->EnumAdapterByGpuPreference(0, DXGI_GPU_PREFERENCE_HIGH_PERFORMANCE, IID_PPV_ARGS(&fast));
+    }
+    if (FAILED(D3D11CreateDevice(fast.Get(), fast ? D3D_DRIVER_TYPE_UNKNOWN : D3D_DRIVER_TYPE_HARDWARE, nullptr, D3D11_CREATE_DEVICE_BGRA_SUPPORT, levels, 1,
+                                 D3D11_SDK_VERSION, &device, nullptr, &ctx))) {
         std::printf("no Direct3D 11.0 device\n");
         return 1;
+    }
+    {
+        // (どの GPU で測ったか: ノートの PC は内蔵の GPU が選ばれることがある)
+        Microsoft::WRL::ComPtr<IDXGIDevice> dxgi;
+        Microsoft::WRL::ComPtr<IDXGIAdapter> adapter;
+        DXGI_ADAPTER_DESC ad{};
+        if (SUCCEEDED(device.As(&dxgi)) && SUCCEEDED(dxgi->GetAdapter(&adapter)) && SUCCEEDED(adapter->GetDesc(&ad))) std::printf("gpu: %ls\n", ad.Description);
     }
     Renderer r;
     std::string error;
@@ -263,6 +279,13 @@ int main(int argc, char** argv) {
     std::printf("render %.3f ms / frame (CPU)\n", renderMs / n);
     std::printf("gpu    %.3f ms / frame\n", gpuSamples > 0 ? gpuMs / gpuSamples : 0.0);
     const Renderer::Stats& st = r.LastStats();
-    std::printf("draw calls %zu  skinned draws %zu  maps drawn %zu  compute-skinned %zu\n", st.drawCalls, st.skinnedDraws, st.mapsDrawn, st.computeSkinned);
+    std::printf("draw calls %zu  skinned draws %zu  maps drawn %zu  compute-skinned %zu  deform dispatches %zu\n", st.drawCalls, st.skinnedDraws, st.mapsDrawn,
+                st.computeSkinned, st.deformDispatches);
+    // スキニングの回数: Compute Shader なら 1 フレームに 1 回。頂点シェーダーなら絵と、描き直した影の地図ごとに (地図に入る物だけ)。
+    if (st.computeSkinned > 0) {
+        std::printf("skinning: once per frame (compute shader)\n");
+    } else {
+        std::printf("skinning: in the picture + up to %zu shadow maps (vertex shader)\n", st.mapsDrawn);
+    }
     return 0;
 }

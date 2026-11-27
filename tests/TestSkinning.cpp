@@ -5,6 +5,7 @@
 
 #include "Test.h"
 
+#include "rm_engine/space3d/runtime/Morph.h"
 #include "rm_engine/space3d/runtime/Primitives.h"
 #include "rm_engine/space3d/runtime/Renderer3D.h"
 #include "rm_engine/space3d/runtime/Skinning.h"
@@ -283,4 +284,108 @@ RM_TEST(Skinning_RendererDrawsPoses) {
     f.mapShapes = std::span<const MapShape>(&shape, 1);
     f.mapDirections = std::span<const Vec3>(&down, 1);
     CHECK(r.Render(ctx.Get(), f));
+}
+
+// Compute Shader のスキニング (docs/ANIMATION.md 段階 7): 頂点シェーダーで骨を掛けたときと同じ絵になる (形を足したもの・
+// 回した骨・2 体のまとめ描き・休みの姿勢が混ざっても)。まとめ描き (インスタンス) は切れず、Dispatch はメッシュごとに 1 回。
+RM_TEST(Skinning_ComputeShaderMatchesVertexShader) {
+    Microsoft::WRL::ComPtr<ID3D11DeviceContext> ctx;
+    const auto device = TestDevice(ctx);
+    CHECK(device);
+    if (!device) return;
+    Renderer r;
+    std::string error;
+    CHECK(r.Init(device.Get(), &error));
+    if (!r.Ready()) return;
+    CHECK(r.ComputeSkinning());  // (既定で入)
+
+    // 立方体: x < 0 の頂点は骨 0、x > 0 は骨 0 と骨 1 を半分ずつ。形「伸びる」は x > 0 の頂点を x に +0.6。
+    MeshData cube = ShapeMesh(Shape::Box);
+    SkinData skin = TwoBones();
+    MorphTarget grow;
+    grow.name = "伸びる";
+    for (uint32_t v = 0; v < cube.vertices.size(); ++v) {
+        const bool right = cube.vertices[v].position.x > 0;
+        skin.vertices.push_back(right ? Influence(0, 32768, 1, 32767) : Influence(0, 65535));
+        if (right) {
+            grow.vertices.push_back(v);
+            grow.position.push_back({0.6f, 0, 0});
+        }
+    }
+    std::vector<Vec3> positions;
+    for (const MeshVertex& v : cube.vertices) positions.push_back(v.position);
+    ComputeBoneBounds(skin, positions);
+    cube.skin = skin;
+    cube.morphs = {grow};
+    cube.morphDefaults = {0.f};
+    const auto gpu = r.Upload(cube, &error);
+    CHECK(gpu && gpu->skinned && gpu->morphCount == 1);
+    if (!gpu) return;
+
+    constexpr int kSize = 64;
+    RenderFrame f;
+    f.width = f.height = kSize;
+    f.view = LookAt({0, 0.5f, -6}, {0, 0, 0}, {0, 1, 0});
+    f.projection = Perspective(60, 1, 0.1f, 100);
+    f.clear = {0, 0, 0, 0};
+    f.shadows = true;  // (影の地図も、動かした頂点を読むシェーダーで描く)
+    const BoneMatrix left[2] = {ToBoneMatrix(Translation({-1.5f, 0, 0})), ToBoneMatrix(AxisAngle({0, 0, 1}, 30))};
+    const BoneMatrix right[2] = {ToBoneMatrix(Translation({1.4f, 0.3f, 0}) * AxisAngle({1, 1, 0}, 40)), ToBoneMatrix(Translation({0, 0.8f, 0}))};
+    const float stretched[1] = {1.f};
+    MeshDraw draws[3];
+    draws[0].mesh = draws[1].mesh = draws[2].mesh = gpu.get();
+    draws[0].bones = left;
+    draws[1].bones = right;
+    draws[1].morphWeights = stretched;
+    Mat4 back;  // 3 つ目: 休みの姿勢 (骨の行列なし) で奥に
+    back.m[3][2] = 4;
+    draws[2].world = back;
+    f.meshes = draws;
+
+    auto alphas = [&](bool cs) {
+        r.SetComputeSkinning(cs);
+        std::vector<int> out;
+        ID3D11Texture2D* picture = r.Render(ctx.Get(), f);
+        if (!picture) return out;
+        D3D11_TEXTURE2D_DESC td{};
+        picture->GetDesc(&td);
+        td.Usage = D3D11_USAGE_STAGING;
+        td.BindFlags = 0;
+        td.CPUAccessFlags = D3D11_CPU_ACCESS_READ;
+        td.MiscFlags = 0;
+        Microsoft::WRL::ComPtr<ID3D11Texture2D> staging;
+        if (FAILED(device->CreateTexture2D(&td, nullptr, &staging))) return out;
+        ctx->CopyResource(staging.Get(), picture);
+        D3D11_MAPPED_SUBRESOURCE map{};
+        if (FAILED(ctx->Map(staging.Get(), 0, D3D11_MAP_READ, 0, &map))) return out;
+        for (int y = 0; y < kSize; ++y) {
+            const auto* row = static_cast<const uint8_t*>(map.pData) + static_cast<size_t>(y) * map.RowPitch;
+            for (int x = 0; x < kSize; ++x) out.push_back(row[x * 4 + 3] > 0 ? 1 : 0);
+        }
+        ctx->Unmap(staging.Get(), 0);
+        return out;
+    };
+    auto same = [](const std::vector<int>& a, const std::vector<int>& b) {
+        if (a.size() != b.size() || a.empty()) return false;
+        int differ = 0, covered = 0;
+        for (size_t k = 0; k < a.size(); ++k) differ += a[k] != b[k], covered += a[k];
+        return covered > 50 && differ <= 2;  // (縁の 1 ピクセルは丸めで違うことがある)
+    };
+    for (int round = 0; round < 3; ++round) {  // (何フレーム続けても: 置き場所を使い回す)
+        const std::vector<int> vs = alphas(false);
+        CHECK(r.LastStats().computeSkinned == 0 && r.LastStats().deformDispatches == 1 && r.LastStats().morphedDraws == 1);
+        const size_t vsCalls = r.LastStats().drawCalls;
+        const std::vector<int> cs = alphas(true);
+        CHECK(r.LastStats().computeSkinned == 2 && r.LastStats().deformDispatches == 1 && r.LastStats().morphedDraws == 1);
+        CHECK(r.LastStats().drawn == 3);
+        if (round > 0) CHECK(r.LastStats().drawCalls == vsCalls);  // (3 体のまとめ描きは切れない。最初は動かない物の影の層を描く分が違う)
+        CHECK(same(vs, cs));
+    }
+    // 形を外すと、伸びた分が消える (どちらのやり方でも同じ)。
+    const std::vector<int> stretchedPicture = alphas(true);
+    draws[1].morphWeights = {};
+    const std::vector<int> vs = alphas(false);
+    CHECK(r.LastStats().deformDispatches == 0);  // (頂点シェーダーで骨・形が無い: Compute Shader は回らない)
+    const std::vector<int> cs = alphas(true);
+    CHECK(same(vs, cs) && !same(cs, stretchedPicture));
 }

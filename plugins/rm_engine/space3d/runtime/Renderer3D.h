@@ -119,8 +119,8 @@ private:
     friend class Renderer;
     Microsoft::WRL::ComPtr<ID3D11Buffer> vertices, indices;
     Microsoft::WRL::ComPtr<ID3D11Buffer> skin;  // スロット 2 (skinned のときだけ): SkinVertex (16 バイト / 頂点)
-    // ブレンドシェイプ: 頂点 (vertices) を Compute Shader が読む口・形の差・形ごとの範囲 (最初の頂点・数・差の場所)。
-    Microsoft::WRL::ComPtr<ID3D11ShaderResourceView> vertexView, morphView;
+    // ブレンドシェイプとスキニング: 頂点 (vertices)・骨のウェイト (skin) を Compute Shader が読む口・形の差・形ごとの範囲。
+    Microsoft::WRL::ComPtr<ID3D11ShaderResourceView> vertexView, skinView, morphView;
     Microsoft::WRL::ComPtr<ID3D11Buffer> morphDeltas;
     struct MorphRange {
         uint32_t first = 0, count = 0, offset = 0;
@@ -351,6 +351,7 @@ public:
         size_t wrongBoneCounts = 0;  // MeshDraw::bones の数がメッシュの骨の数と違った (休みの姿勢で描いた)
         size_t morphedDraws = 0;     // ブレンドシェイプを Compute Shader で足した描画
         size_t computeSkinned = 0;   // 骨の行列を Compute Shader で掛けた描画 (段階 7)
+        size_t deformDispatches = 0; // 頂点を動かす Compute Shader を回した数 (メッシュごとに 1 回)
     };
     // デバイスごと (そのデバイスの全レンダラーで共有: シーンビュー、カメラのプレビュー、
     // サムネイル): シェーダーと状態、立方体と床、定数バッファ、シャドウマップと各マップが今
@@ -386,6 +387,9 @@ private:
         std::span<const BoneMatrix> skin;  // ... そのスキンの行列 (見えるかの判定)
         uint64_t pose = 0;           // 姿勢の版 (hash に入る。0: 休みの姿勢)
         int draw = -1;               // RenderFrame::meshes の何番目か (箱・地図の形: -1)
+        uint32_t deform = kNoBones;  // 動かした頂点 (deformed_) の最初の頂点 (DRAW.w)。kNoBones: メッシュの頂点のまま
+        uint32_t csBones = kNoBones; // ... Compute Shader で骨を掛けたとき、その骨の行列の行 (置き場所が作れないときに戻す)
+        float reach = 0;             // 形の差で広がる長さ (見えるかの判定)
     };
     // 描画 1 つ: メッシュの三角形のいくつかと、物の数値と材質 (`slot`: draws_ での場所。
     // シェーダーがインスタンスのデータとして読む)。
@@ -403,7 +407,7 @@ private:
     bool UploadFrame(ID3D11DeviceContext* ctx);
     uint32_t AddThing(const Mat4& world, Color color, Color highlight);
     uint32_t AddMaterial(const DrawMaterial& m);
-    uint32_t AddDraw(uint32_t thing, uint32_t material, uint32_t bones = kNoBones);
+    uint32_t AddDraw(uint32_t thing, uint32_t material, uint32_t bones = kNoBones, uint32_t deform = kNoBones);
     // cmds_ に描画を足す - 直前の描画の次のインスタンスなら (同じメッシュ・部品・絵で、次の
     // スロット)、それに足す。mergeFloor_ より前の描画とはまとめない。
     void Emit(const GpuMesh* mesh, uint32_t firstIndex, uint32_t indexCount, uint32_t slot, const DrawMaterial* material);
@@ -458,24 +462,28 @@ private:
     Ptr<ID3D11Texture2D> cloudTex_;
     Ptr<ID3D11ShaderResourceView> cloudSrv_;
     uint32_t cloudSize_ = 0;
-    // ブレンドシェイプ: Compute Shader・形の重みの表・フレームごとの、形を足した頂点 (描画ごとに 1 つ。使い回す)。
+    // ブレンドシェイプとスキニングの Compute Shader (段階 6・7): 形の重みの表・フレームの仕事の表 (描画ごとに 1 つ: 形の表の
+    // 範囲・骨の行列の行・置き場所の最初の頂点)・動かした頂点の置き場所 (フレームの全部の描画の分。頂点 1 つに float4 2 つ:
+    // (位置, 法線 x) (法線 y z, 0, 0))。どれも大きくなるときだけ作り直す。描くときは、まとめ描き (インスタンス) のまま
+    // 頂点シェーダーが DRAW.w の番号 + 頂点の番号で読む。
     Ptr<ID3D11ComputeShader> morphCs_;
     bool computeSkinning_ = true;
-    Ptr<ID3D11Buffer> morphActive_, morphCb_;
-    Ptr<ID3D11ShaderResourceView> morphActiveView_;
-    size_t morphActiveCapacity_ = 0;
-    struct MorphOut {
-        Ptr<ID3D11Buffer> buffer;
-        Ptr<ID3D11UnorderedAccessView> uav;
-        uint32_t bytes = 0;
-        std::shared_ptr<GpuMesh> mesh;  // 元のメッシュの写しで、頂点だけこれを指す
+    Ptr<ID3D11Buffer> morphActive_, morphCb_, deformJobs_, deformed_;
+    Ptr<ID3D11ShaderResourceView> morphActiveView_, deformJobsView_, deformedView_;
+    Ptr<ID3D11UnorderedAccessView> deformedUav_;
+    size_t morphActiveCapacity_ = 0, deformJobsCapacity_ = 0, deformedCapacity_ = 0;  // (float4 の数)
+    struct DeformJob {
+        const GpuMesh* mesh;
+        uint32_t activeFirst, activeCount;  // deformActive_ のどこからいくつ
+        uint32_t bones;                     // bones_ の行 (kNoBones: 骨は掛けない)
+        uint32_t out;                       // 置き場所の最初の頂点
     };
-    std::vector<MorphOut> morphPool_;
-    std::vector<MeshDraw> morphDraws_;  // 形を足した物を差し替えた描画 (Render の間だけ)
+    std::vector<DeformJob> deformList_;
+    std::vector<std::array<uint32_t, 4>> deformActive_;  // 形ごと: 最初の頂点・数・差の場所・重み (asuint)
+    uint32_t deformedVertices_ = 0;
     std::vector<float> screenSizes_;
-    // `in` に重みの付いた形があれば、その頂点を Compute Shader で作り、メッシュを差し替えたフレームを返す。
-    const RenderFrame& PrepareMorphs(ID3D11DeviceContext* ctx, const RenderFrame& in, RenderFrame& scratch);
-    const GpuMesh* Morphed(ID3D11DeviceContext* ctx, const GpuMesh& mesh, std::span<const float> weights, size_t slot);
+    bool ReserveDeform();                    // 置き場所と表を用意する (できない: false)
+    void Deform(ID3D11DeviceContext* ctx);  // deformList_ を GPU で (メッシュごとに 1 回の Dispatch)
 };
 
 }  // namespace rm::space3d
