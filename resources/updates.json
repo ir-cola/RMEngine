@@ -3,6 +3,16 @@
   "format": 1,
   "updates": [
     {
+      "version": "0.0.48",
+      "date": "2026-11-28",
+      "items": [
+        {
+          "ja": "アセットのパネルで、モデルのタイルの ▸ を押すと中のクリップが並びます。アニメーターの「クリップ」の欄やアニメーションのタブへドラッグできます",
+          "en": "In the Assets panel, the ▸ on a model tile lists its clips. Drag them onto the animator's Clip field or into the Animation tab"
+        }
+      ]
+    },
+    {
       "version": "0.0.47",
       "date": "2026-11-28",
       "items": [

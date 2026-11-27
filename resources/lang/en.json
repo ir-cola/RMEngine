@@ -552,5 +552,7 @@
   "春": "Spring",
   "夏": "Summer",
   "秋": "Fall",
-  "冬": "Winter"
+  "冬": "Winter",
+  "中の物を閉じる": "Close the contents",
+  "中の物を並べる (モデルのクリップなど。ドラッグして欄へ)": "Show the contents (such as a model's clips; drag them onto fields)"
 }

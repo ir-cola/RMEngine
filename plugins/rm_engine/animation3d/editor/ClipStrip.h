@@ -16,8 +16,10 @@
 // 時刻が変わったら読み直す。その間は前の一覧のまま)。イベントは .meta の "import" の "clips" に書く
 // (形と計算は ClipEvents.h)。どの変更も Undo の 1 件 (ドラッグ 1 回で 1 件)。
 
+#include "editor/assets/AssetChildren.h"
 #include "editor/assets/AssetInspect.h"
 
+#include <filesystem>
 #include <functional>
 #include <vector>
 
@@ -25,5 +27,10 @@ namespace rm::animation3d {
 
 // アセット 1 つ分の「クリップとイベント」のブロックを作る関数 (AssetInspectPart::open)。
 std::function<std::vector<editor::InspectBlock>()> OpenClipStrip(const editor::AssetImportAccess& access);
+
+// アセットのパネルで、モデルのタイルの ▸ で並べるクリップ (docs/ANIMATION.md 7-3 の C1。AssetChildSource::children)。
+// 同じ一覧 (別のスレッドで読んで覚えたもの) から。ドラッグするとクリップの名前 (w::kDragName): アニメーターの「クリップ」の欄・
+// アニメーションのタブの状態のクリップの欄へ。
+std::vector<editor::AssetChild> ClipChildren(const std::filesystem::path& file, bool* pending);
 
 }  // namespace rm::animation3d

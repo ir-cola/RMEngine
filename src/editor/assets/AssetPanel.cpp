@@ -4,6 +4,7 @@
 #include "base/Utf.h"
 #include "core/asset/ImportSettings.h"
 #include "core/reflect/Data.h"
+#include "editor/assets/AssetChildren.h"
 #include "editor/assets/AssetFileType.h"
 #include "editor/assets/AssetGrid.h"
 #include "editor/assets/AssetInspect.h"
@@ -806,7 +807,30 @@ void AssetPanel::DrawGrid(ui::Context& c, const Rect& view) {
     const bool searching = !grid_.search.empty();
     const std::vector<size_t> list = searching ? AssetsMatching(entries, lib_.Order(), grid_.search) : AssetsInFolder(entries, lib_.Order(), path);
     const size_t back = !searching && !path.empty() ? 1 : 0;  // 先頭の「戻る」
-    const size_t count = list.size() + back;
+    // 並ぶタイル: アセットと、▸ で開いたアセットの後ろに、その子 (AssetChildren.h)。
+    struct Cell {
+        size_t item = 0;  // list の番号
+        int child = -1;   // 子の番号 (-1: アセットそのもの)
+    };
+    std::vector<Cell> cells;
+    std::vector<std::vector<AssetChild>> kids(list.size());
+    std::vector<const AssetChildSource*> sources(list.size(), nullptr);
+    std::erase_if(grid_.open, [&](const std::string& g) { return !lib_.Index().ByGuid(g); });
+    for (size_t j = 0; j < list.size(); ++j) {
+        cells.push_back({j, -1});
+        const asset::Entry& e = entries[list[j]];
+        if (e.folder || !registry_) continue;
+        const asset::Kind kind = asset::KindOf(e.path, e.folder);
+        for (const auto& s : registry_->Contributions<AssetChildSource>(kAssetChildrenPoint)) {
+            if (s.item->kind == kind && s.item->children) sources[j] = s.item;
+        }
+        if (!sources[j] || std::find(grid_.open.begin(), grid_.open.end(), e.guid) == grid_.open.end()) continue;
+        bool pending = false;
+        kids[j] = sources[j]->children(lib_.FullPath(e), &pending);
+        if (pending) c.RequestAnimation();  // (読み終えたら並べる)
+        for (size_t k = 0; k < kids[j].size(); ++k) cells.push_back({j, static_cast<int>(k)});
+    }
+    const size_t count = cells.size() + back;
     std::erase_if(grid_.sel, [&](const std::string& g) { return !lib_.Index().ByGuid(g); });
     std::string parentGuid;  // 「戻る」の行き先
     if (back) {
@@ -908,11 +932,38 @@ void AssetPanel::DrawGrid(ui::Context& c, const Rect& view) {
             }
             continue;
         }
-        const asset::Entry& e = entries[list[k - back]];
+        const Cell& cell = cells[k - back];
+        const asset::Entry& e = entries[list[cell.item]];
         const std::string guid = e.guid;
+        if (cell.child >= 0) {
+            // 子のタイル: 絵と名前。押してドラッグすると、その子の渡すもの (インスペクターの欄・タブの欄へ)。
+            const AssetChild& kid = kids[cell.item][static_cast<size_t>(cell.child)];
+            c.PushId(guid + "/" + std::to_string(cell.child));
+            const bool over = c.IsHovered(tile);
+            if (over && c.MousePressed()) {
+                tilePressed = true;
+                if (!kid.drag.kind.empty()) {
+                    grid_.childDrag = kid.drag;
+                    grid_.childName = kid.name;
+                    grid_.pressX = in.mouseX;
+                    grid_.pressY = in.mouseY;
+                }
+            }
+            w::DrawTile(c, tile.Inset(4), false, over && !grid_.dragging && !grid_.childDragging);
+            w::DrawIcon(c, pic.Inset(m.icon * 0.3f), sources[cell.item]->icon, theme::Accent);
+            c.PushClip(name);
+            p.Text(name, kid.name, nameStyle);
+            c.PopClip();
+            if (over && !grid_.dragging && !grid_.childDragging && !kid.tooltip.empty()) w::Tooltip(c, kid.tooltip);
+            c.PopId();
+            continue;
+        }
         const asset::Kind kind = asset::KindOf(e.path, e.folder);
         const bool selected = isSelected(guid);
-        const bool hovered = c.IsHovered(tile);
+        // 子のあるアセット: 左上の ▸ / ▾ で開く・閉じる (タイルを押したことにはしない)。
+        const Rect toggle{tile.x + 2, tile.y + 2, 20, 20};
+        const bool hasKids = sources[cell.item] != nullptr;
+        const bool hovered = c.IsHovered(tile) && !(hasKids && c.IsHovered(toggle));
         c.PushId(guid);
         if (hovered && c.MousePressed() && grid_.renaming != guid) {
             tilePressed = true;
@@ -969,6 +1020,18 @@ void AssetPanel::DrawGrid(ui::Context& c, const Rect& view) {
         }
 
         w::DrawTile(c, tile, selected, hovered && !grid_.dragging, grid_.keys);
+        if (hasKids) {
+            const bool isOpen = std::find(grid_.open.begin(), grid_.open.end(), guid) != grid_.open.end();
+            if (w::IconButton(c, "open", toggle, isOpen ? w::Icon::ChevronDown : w::Icon::ChevronRight)) {
+                if (isOpen) {
+                    std::erase(grid_.open, guid);
+                } else {
+                    grid_.open.push_back(guid);
+                }
+                c.RequestRedraw();
+            }
+            if (c.IsHovered(toggle) && !grid_.dragging) w::Tooltip(c, isOpen ? Tr(L"中の物を閉じる") : Tr(L"中の物を並べる (モデルのクリップなど。ドラッグして欄へ)"));
+        }
         // 絵: フォルダー / サムネイル (画像・3D モデル) / 種類の絵。
         ID2D1Bitmap* bitmap = !e.folder && thumbnails_ && icon >= kThumbnailsFrom ? AssetThumbnail(c, lib_, *thumbnails_, guid, m.icon) : nullptr;
         if (e.folder) {
@@ -1048,6 +1111,24 @@ void AssetPanel::DrawGrid(ui::Context& c, const Rect& view) {
         }
     }
     if (grid_.dragging) w::SetDragThing({"asset", grid_.sel});
+    // 子のタイルのドラッグ (5 px 動いたら。離すと終わる)。
+    if (!grid_.childDrag.kind.empty()) {
+        if (!grid_.childDragging && in.down[0] && std::hypot(in.mouseX - grid_.pressX, in.mouseY - grid_.pressY) >= 5.f) grid_.childDragging = true;
+        if (grid_.childDragging && c.KeyPressed(ui::Key::Escape)) {
+            grid_.childDrag = {};
+            grid_.childDragging = false;
+            w::EndDragThing(c);
+            c.RequestRedraw();
+        }
+    }
+    if (grid_.childDragging) w::SetDragThing(grid_.childDrag);
+    if (!grid_.childDrag.kind.empty() && !in.down[0]) {
+        if (grid_.childDragging) w::EndDragThing(c);
+        grid_.childDrag = {};
+        grid_.childDragging = false;
+        c.RequestRedraw();
+    }
+    if (grid_.childDragging) w::DragTag(c, grid_.childName, false);
     w::EndScroll(c, "asset.grid", view, content);
     if (!grid_.press.empty() && !in.down[0]) {
         // 離した。

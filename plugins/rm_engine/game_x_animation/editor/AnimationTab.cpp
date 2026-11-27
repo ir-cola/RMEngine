@@ -43,6 +43,14 @@ using animation::AnimState;
 using animation::BlendMotion;
 using animation::LayerMode;
 using animation::ParamType;
+
+// クリップの欄に落とした名前 (アセットのパネルのクリップのタイル: w::kDragName)。無い: nullopt。
+std::optional<std::string> DroppedClip(ui::Context& c, const ui::Rect& r) {
+    if (!w::DraggedThing()) return std::nullopt;
+    const w::DragThing* t = w::DropTarget(c, r, [](const w::DragThing& d) { return d.kind == w::kDragName && d.values.size() == 1; });
+    if (!t) return std::nullopt;
+    return t->values[0];
+}
 using animation::RuleCheck;
 using animation::StateExit;
 using animation::StateKind;
@@ -717,7 +725,12 @@ private:
             cx += kindW + 4;
             if (!blend) {
                 std::string clip = s.clip;
-                if (w::TextField(c, "clip", {cx, y, midW - 26, kRow}, clip, Tr(L"クリップ"))) {
+                bool changed = w::TextField(c, "clip", {cx, y, midW - 26, kRow}, clip, Tr(L"クリップ"));
+                if (const auto dropped = DroppedClip(c, {cx, y, midW - 26, kRow})) {  // (アセットのパネルのクリップのタイル)
+                    clip = *dropped;
+                    changed = true;
+                }
+                if (changed) {
                     Edit(host, "状態のクリップ", MergeOf(std::format("{}s{}/clip", layer, i)), [layer, i, clip](AnimController& a) {
                         auto& list = StatesOf(a, layer);
                         if (i < list.size()) list[i].clip = clip;
@@ -833,7 +846,12 @@ private:
             c.PushId(static_cast<uint64_t>(7000 + k));
             float cx = tx;
             std::string clip = m.clip;
-            if (w::TextField(c, "clip", {cx, ty, clipW, kRow}, clip, Tr(L"クリップ"))) {
+            bool changed = w::TextField(c, "clip", {cx, ty, clipW, kRow}, clip, Tr(L"クリップ"));
+            if (const auto dropped = DroppedClip(c, {cx, ty, clipW, kRow})) {
+                clip = *dropped;
+                changed = true;
+            }
+            if (changed) {
                 Edit(host, "混ぜるクリップ", MergeOf(std::format("{}s{}/m{}/clip", layer, i, k)), [layer, i, k, clip](AnimController& a) {
                     auto& list = StatesOf(a, layer);
                     if (i < list.size() && k < list[i].motions.size()) list[i].motions[k].clip = clip;

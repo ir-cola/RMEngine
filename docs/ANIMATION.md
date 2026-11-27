@@ -434,6 +434,9 @@ rule any  :             -> Idle 0.2
 - **段階 7 で後にしたこと (3)**: 戻すのを速くする (鍵の場所を前のフレームから覚える・同じ刻みの骨をまとめて戻す)・ブレンドシェイプの重みの列 (`MorphTrack`) も圧縮する
 - **段階 7 でしたこと (4: .rmclip に分けて使っているクリップだけ焼く。2026-11-28。版 0.0.47)**: 段階 1 で後にしたもの。焼いたモデルの形式 4 (`CPAK`・`CLPF`)。クリップのファイル `.rmclip` (`WriteBakedClip` / `ReadBakedClip`。チャンクはモデルと同じ式: `WriteClipChunks` / `ReadClipChunk`)。書き出し (`game_x_3d/editor/ExportBake`) は `UsedClips` (`ClipSettings`: 最初・いつも入れる・ゲームに入る文書の JSON の文字列の値・スクリプトの `"名前"`) で選び、1 つずつ `Baked/<id>/clip<n>.rmclip` に。文書は `ExportAsset::documents` (ゲーム制作の `CollectAssets` が、シーン・.rm… の JSON・`Assets/Scripts` のソースを入れる)。ゲームは `LoadClipFiles` で読む (`GameDraw3D`・システム「アニメーション」。ゲームの中のパスは `AssetAccess::path` を足した)
 - **段階 7 で後にしたこと (4)**: 同じクリップを使う別のモデルで .rmclip を 1 つにまとめる・クリップだけのファイル (アニメーションだけの FBX) を独り立ちさせる
+- **段階 7 でしたこと (5: アセットのパネルのクリップ。2026-11-28。版 0.0.48)**: 決めたこと C1。核の口 `core.asset_children` (`src/editor/assets/AssetChildren.h`: `AssetChildSource{種類, 絵, children}`。子のあるタイルに ▸、開くと後ろに子のタイル。子はドラッグで `w::DragThing` を渡す)。名前を渡すドラッグ `w::kDragName` を、インスペクターの選ぶ欄 (`DrawChoices`) が選べるものの中にあるときだけ受け取る。3D アニメーションが `ClipChildren` (クリップの帯と同じ一覧) を出し、アニメーションのタブのクリップの欄も受け取る
+- **段階 7 で後にしたこと (5)**: 行で出す一覧の形 (パネルは今タイルだけ)・.rmanim をインスペクターで開いたときの状態のクリップの欄 (今は選ぶ欄でないので落とせない)・パネルの子のタイルの画面のテスト
+- **段階 7 の前と後の数字** (`tools/benchanim`: 骨 64 本・頂点 4,000 個のキャラクター 300 体・クリップ 2 つを混ぜる・影の地図 7 枚。このパソコン: 論理コア 8・RTX 4060 Laptop): 姿勢を作る CPU の時間 **2.43 ms → 0.29 ms** (作業スレッド 0.65 ms、+ 遠い物の間引き 0.28〜0.29 ms)・GPU の時間 4.1〜4.3 ms → 4.3〜4.4 ms (Compute Shader のスキニング: この絵では差は小さい。影の地図を何枚描いてもスキニングは 1 回)・クリップの大きさ **122.0 KB → 49.6 KB** (圧縮ふつう。代わりに姿勢の時間は 0.29 → 0.34 ms)
 - 段階ごとに版を 0.0.1 上げ、`resources/updates.json`・`docs/HOW_TO_TRY.md`・`docs/TEST_LIST.md`・`docs/TECHNOLOGIES.md` (スキニング・四元数・ドロネーなど) に書く
 - 段階 1 の前に、骨のある見本のモデルを決める (6 章の 4)
 - 段階 5〜7・2D のコマ送り・後にしたものの割り振り・ナビゲーションとのつなぎの詳しい設計は **7 章** (2026-11-26)

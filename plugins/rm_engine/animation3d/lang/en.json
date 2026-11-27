@@ -33,5 +33,6 @@
   "つまみは試すだけです (保存しません)。シーンビューで選んだ、このモデルの物にも映ります": "The sliders are only for trying (nothing is saved). They also show on this model's selected objects in the scene view",
   "ブレンドシェイプ ({})": "Blend shapes ({})",
   "クリップの書き出し": "Clip export",
-  "骨の動きの大きさ {:.1f} KB → {:.1f} KB (書き出したゲームも、エディターの再生もこの形)": "Bone motion size {:.1f} KB → {:.1f} KB (the exported game and playback in the editor both use this)"
+  "骨の動きの大きさ {:.1f} KB → {:.1f} KB (書き出したゲームも、エディターの再生もこの形)": "Bone motion size {:.1f} KB → {:.1f} KB (the exported game and playback in the editor both use this)",
+  "クリップ {} ({:.2f} 秒)。アニメーターの「クリップ」の欄や、アニメーションのタブの状態のクリップの欄へドラッグできます": "Clip {} ({:.2f} s). Drag it onto the animator's Clip field or a state's clip field in the Animation tab"
 }

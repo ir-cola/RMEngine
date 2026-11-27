@@ -426,9 +426,12 @@ int PickerPopup(ui::Context& c, Popup& popup, std::string_view id, std::string& 
 // エディターがそのウィンドウに場所を伝え (SetDragElsewhere)、そこの受け取る所も光って
 // ものを受け取る (独立したウィンドウに出したパネル)。
 struct DragThing {
-    std::string kind;                 // それが何か: "asset" (values: id) / "item" (values: 階層の項目の id)
+    std::string kind;                 // それが何か: "asset" (values: id) / "item" (values: 階層の項目の id) / kDragName
     std::vector<std::string> values;  // 1 つ以上
 };
+// 名前を渡すドラッグの kind (values[0]: 名前。アセットのパネルの子のタイル: モデルのクリップなど)。インスペクターの選ぶ欄は、
+// 落とした名前が選べるものの中にあれば受け取る。
+inline constexpr char kDragName[] = "name";
 void SetDragThing(DragThing thing);
 // このフレームの最後にドラッグを終わらせる: 同じフレームで後から描く場所には、離されたことが見える。
 void EndDragThing(ui::Context& c);

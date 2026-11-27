@@ -134,6 +134,11 @@ private:
         bool dragging = false;
         std::string inspect;           // 離したらインスペクターに出すもの
         bool keys = false;             // 最後のクリックが並びだった (キーが効く)
+        // 子のタイル (AssetChildren.h): ▸ で開いたアセットの id と、押した / ドラッグしている子。
+        std::vector<std::string> open;
+        w::DragThing childDrag;        // 押した子が渡すもの (kind が空: 押していない)
+        std::wstring childName;
+        bool childDragging = false;
         w::Popup menu;
         std::vector<w::Action> menuActions;
     } grid_;

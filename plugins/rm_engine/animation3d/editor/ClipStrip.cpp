@@ -600,6 +600,22 @@ std::vector<editor::InspectBlock> BlocksOf(const std::shared_ptr<Strip>& sp) {
 
 }  // namespace
 
+std::vector<editor::AssetChild> ClipChildren(const std::filesystem::path& file, bool* pending) {
+    const Listing& l = TheCatalog().Look(file);
+    if (pending) *pending = !l.known || l.ticket != 0;
+    std::vector<editor::AssetChild> out;
+    if (!l.ok) return out;
+    for (const ClipInfo& ci : l.clips) {
+        editor::AssetChild kid;
+        kid.name = Utf8ToWide(ci.name);
+        kid.tooltip = TrF(L"クリップ {} ({:.2f} 秒)。アニメーターの「クリップ」の欄や、アニメーションのタブの状態のクリップの欄へドラッグできます",
+                          kid.name, ci.duration);
+        kid.drag = {w::kDragName, {ci.name}};
+        out.push_back(std::move(kid));
+    }
+    return out;
+}
+
 std::function<std::vector<editor::InspectBlock>()> OpenClipStrip(const editor::AssetImportAccess& access) {
     auto s = std::make_shared<Strip>();
     s->access = access;

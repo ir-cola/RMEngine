@@ -295,6 +295,24 @@ void DrawChoices(Pass& x, const Spot& s, const std::string& cur, bool differ) {
         x.st.popupId = popupId;
         x.st.pickSearch.clear();
     }
+    // 名前のドラッグ (アセットのパネルの子のタイル: モデルのクリップなど。w::kDragName): 選べるものの中に
+    // あるときだけ受け取る。選んだのと同じ 1 件の編集 (Undo)。
+    if (s.enabled && w::DraggedThing()) {
+        auto accepts = [&](const w::DragThing& d) {
+            return d.kind == w::kDragName && d.values.size() == 1 &&
+                   std::any_of(list.begin(), list.end(), [&](const Choice& ch) { return ch.value == d.values[0]; });
+        };
+        if (const w::DragThing* t = w::DropTarget(c, s.r, accepts)) {
+            Edit ed = s.editFor(json::Value(t->values[0]));
+            if (ed.before != ed.after || !s.others.empty()) {
+                if (x.wrap) {
+                    if (auto outer = x.wrap(std::move(ed))) x.st.pending = std::move(*outer);
+                } else {
+                    x.st.pending = std::move(ed);
+                }
+            }
+        }
+    }
     if (!x.st.popup.open || x.st.popupId != popupId) return;
     State* st = &x.st;
     const bool longList = list.size() > kShortEnum;
