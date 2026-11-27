@@ -21,6 +21,9 @@ void MeshLines(const NavPreview& p, game_production::DebugDraw& out);
 void AreaLines(const game_production::Scene& scene, const Worlds& worlds, std::span<const int> selection, bool all, game_production::DebugDraw& out);
 // ナビの動く者: 体の輪 (型の半径)。Play 中は道 (角の点)・今の速さ・望む速さの矢印も。
 void AgentLines(const game_production::Scene& scene, const Worlds& worlds, std::span<const int> selection, bool all, game_production::DebugDraw& out);
+// つなぎの線 (弧と向きの矢印。使えない線は薄く) と、ナビの障害物の形。
+void LinkLines(const game_production::Scene& scene, const Worlds& worlds, std::span<const int> selection, bool all, game_production::DebugDraw& out);
+void ObstacleLines(const game_production::Scene& scene, const Worlds& worlds, std::span<const int> selection, bool all, game_production::DebugDraw& out);
 // 口 scene_lines (hostLines) の中身。
 void NavSceneLines(editor::SoftwareHost& host, const game_production::Scene& scene, std::span<const int> selection, bool all,
                    game_production::DebugDraw& out);

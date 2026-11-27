@@ -52,7 +52,7 @@ void AreaLines(const game_production::Scene& scene, const Worlds& worlds, std::s
         const NavArea* a = Find<NavArea>(*t.entity);
         if (!a || !Chosen(selection, all, t.entity->data.id)) continue;
         const NavAreaKind* kind = settings ? FindAreaKind(*settings, AreaIdOfCode(AreaCodeOf(a->area))) : nullptr;
-        Color color = kind ? kind->color : theme::SceneArea();
+        Color color = a->closed ? theme::SceneNavClosed() : kind ? kind->color : theme::SceneArea();
         if (!t.activeInHierarchy) color = color.Alpha(0.35f);
         const auto w = worlds.find(t.entity->data.id);
         const space3d::Mat4 world = w != worlds.end() ? w->second : space3d::Mat4{};
@@ -60,6 +60,82 @@ void AreaLines(const game_production::Scene& scene, const Worlds& worlds, std::s
         auto line = [&](Vec3 p, Vec3 q) { out.Add(DebugSpace::Space3D, space3d::TransformPoint(world, p), space3d::TransformPoint(world, q), color, 0); };
         if (a->shape == NavAreaShape::Cylinder) {
             constexpr int kSides = 32;
+            constexpr float kTurn = 2 * std::numbers::pi_v<float> / kSides;
+            for (const float y : {-h.y, h.y}) {
+                for (int i = 0; i < kSides; ++i) {
+                    const float a0 = kTurn * static_cast<float>(i), a1 = kTurn * static_cast<float>(i + 1);
+                    line({std::cos(a0) * h.x, y, std::sin(a0) * h.x}, {std::cos(a1) * h.x, y, std::sin(a1) * h.x});
+                }
+            }
+            for (int i = 0; i < 4; ++i) {
+                const float an = kTurn * static_cast<float>(i * kSides / 4);
+                line({std::cos(an) * h.x, -h.y, std::sin(an) * h.x}, {std::cos(an) * h.x, h.y, std::sin(an) * h.x});
+            }
+            continue;
+        }
+        auto corner = [&](int i) { return Vec3{(i & 1) ? h.x : -h.x, (i & 2) ? h.y : -h.y, (i & 4) ? h.z : -h.z}; };
+        for (int i = 0; i < 8; ++i) {
+            for (const int bit : {1, 2, 4}) {
+                if (!(i & bit)) line(corner(i), corner(i | bit));
+            }
+        }
+    }
+}
+
+void LinkLines(const game_production::Scene& scene, const Worlds& worlds, std::span<const int> selection, bool all, DebugDraw& out) {
+    if (!all && selection.empty()) return;
+    for (const navigation::NavLinkInput& l : LinksOf(scene, worlds)) {
+        if (!Chosen(selection, all, static_cast<int>(l.id))) continue;
+        const game_production::SceneEntity* e = scene.Find(static_cast<int>(l.id));
+        const NavLink* link = e ? Find<NavLink>(*e) : nullptr;
+        if (!link) continue;
+        Color color = theme::NavLink();
+        if (!link->enabled) color = color.Alpha(0.35f);
+        // 弧 (跳ぶ線は跳ぶ高さ。ほかは距離に合わせた低い弧)。
+        const float dx = l.b.x - l.a.x, dz = l.b.z - l.a.z;
+        const float flat = std::sqrt(dx * dx + dz * dz);
+        const float lift = link->move == NavLinkMove::Jump ? std::max(0.f, link->jumpHeight) : std::min(1.f, flat * 0.15f + 0.1f);
+        constexpr int kSteps = 16;
+        auto at = [&](float t) { return Vec3{l.a.x + dx * t, l.a.y + (l.b.y - l.a.y) * t + JumpLift(lift, t) + kLift, l.a.z + dz * t}; };
+        for (int i = 0; i < kSteps; ++i) {
+            out.Add(DebugSpace::Space3D, at(static_cast<float>(i) / kSteps), at(static_cast<float>(i + 1) / kSteps), color, 0);
+        }
+        // 向きの矢印 (終わり。両方向なら始めにも) と、始めと終わりの丸 (つながる所)。
+        auto arrow = [&](float t0, float t1) {
+            const Vec3 p = at(t1), q = at(t0);
+            const float ax = p.x - q.x, az = p.z - q.z;
+            const float n = std::max(1e-4f, std::sqrt(ax * ax + az * az));
+            const float s = 0.3f;
+            out.Add(DebugSpace::Space3D, p, {p.x - ax / n * s - az / n * s * 0.6f, p.y + 0.05f, p.z - az / n * s + ax / n * s * 0.6f}, color, 0);
+            out.Add(DebugSpace::Space3D, p, {p.x - ax / n * s + az / n * s * 0.6f, p.y + 0.05f, p.z - az / n * s - ax / n * s * 0.6f}, color, 0);
+        };
+        arrow(0.9f, 1.f);
+        if (l.both) arrow(0.1f, 0.f);
+        for (const Vec3 c : {l.a, l.b}) {
+            constexpr int kSides = 16;
+            constexpr float kTurn = 2 * std::numbers::pi_v<float> / kSides;
+            for (int i = 0; i < kSides; ++i) {
+                const float a0 = kTurn * static_cast<float>(i), a1 = kTurn * static_cast<float>(i + 1);
+                out.Add(DebugSpace::Space3D, {c.x + std::cos(a0) * l.radius, c.y + kLift, c.z + std::sin(a0) * l.radius},
+                        {c.x + std::cos(a1) * l.radius, c.y + kLift, c.z + std::sin(a1) * l.radius}, color, 0);
+            }
+        }
+    }
+}
+
+void ObstacleLines(const game_production::Scene& scene, const Worlds& worlds, std::span<const int> selection, bool all, DebugDraw& out) {
+    if (!all && selection.empty()) return;
+    for (const game_production::TreeEntry& t : scene.TreeOrder()) {
+        const NavObstacle* o = Find<NavObstacle>(*t.entity);
+        if (!o || !Chosen(selection, all, t.entity->data.id)) continue;
+        const auto w = worlds.find(t.entity->data.id);
+        const space3d::Mat4 world = w != worlds.end() ? w->second : space3d::Mat4{};
+        Color color = theme::SceneNavObstacle();
+        if (!t.activeInHierarchy) color = color.Alpha(0.35f);
+        const Vec3 h{std::fabs(o->size.x) * 0.5f, std::fabs(o->size.y) * 0.5f, std::fabs(o->size.z) * 0.5f};
+        auto line = [&](Vec3 p, Vec3 q) { out.Add(DebugSpace::Space3D, space3d::TransformPoint(world, p), space3d::TransformPoint(world, q), color, 0); };
+        if (o->shape == NavObstacleShape::Cylinder) {
+            constexpr int kSides = 24;
             constexpr float kTurn = 2 * std::numbers::pi_v<float> / kSides;
             for (const float y : {-h.y, h.y}) {
                 for (int i = 0; i < kSides; ++i) {
@@ -129,6 +205,8 @@ void NavSceneLines(editor::SoftwareHost& host, const game_production::Scene& sce
     }
     AreaLines(scene, worlds, selection, all, out);
     AgentLines(scene, worlds, selection, all, out);
+    LinkLines(scene, worlds, selection, all, out);
+    ObstacleLines(scene, worlds, selection, all, out);
 }
 
 }  // namespace rm::game_x_navigation

@@ -124,13 +124,34 @@ int SetAreaOpenApi(void* ctx, const char* name, int open) {
     return s && name && NavWorldOf(*s).SetAreaOpen(*s, name, open != 0) ? 1 : 0;
 }
 
+int CompleteLinkApi(void* ctx, uint64_t e) {
+    Scene* s = SceneOf(ctx);
+    return s && IdOk(e) && NavWorldOf(*s).CompleteLink(*s, static_cast<int>(e)) ? 1 : 0;
+}
+int SetLinkEnabledApi(void* ctx, uint64_t e, int enabled) {
+    Scene* s = SceneOf(ctx);
+    return s && IdOk(e) && NavWorld::SetLinkEnabled(*s, static_cast<int>(e), enabled != 0) ? 1 : 0;
+}
+int SetAreaClosedApi(void* ctx, uint64_t e, int closed) {
+    Scene* s = SceneOf(ctx);
+    return s && IdOk(e) && NavWorld::SetAreaClosed(*s, static_cast<int>(e), closed != 0) ? 1 : 0;
+}
+
 constexpr RmNavApi kTable{&SetDestinationApi, &StopApi,        &ResumeApi,       &SetSpeedApi,    &WarpApi,        &StateApi,
                           &FindPathApi,       &RaycastApi,     &ClosestPointApi, &RandomPointApi, &SetAreaCostApi, &SetAreaOpenApi};
+
+
+constexpr RmNavApi2 kTable2{kTable, &CompleteLinkApi, &SetLinkEnabledApi, &SetAreaClosedApi};
 
 }  // namespace
 
 const game_production::ScriptApiPart& ScriptNavPart() {
     static const game_production::ScriptApiPart part{RM_PART_NAV, RM_PART_NAV_VERSION, &kTable};
+    return part;
+}
+
+const game_production::ScriptApiPart& ScriptNavPart2() {
+    static const game_production::ScriptApiPart part{RM_PART_NAV, RM_PART_NAV_VERSION2, &kTable2};
     return part;
 }
 

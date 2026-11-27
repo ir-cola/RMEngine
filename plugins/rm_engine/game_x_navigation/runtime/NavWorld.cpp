@@ -171,6 +171,8 @@ void NavWorld::Place(Agent& a, int entity, Vec3 at, const navigation::AgentParam
             a.written = at;
             a.pending = a.hasTarget && !a.stopped;  // (行き先はもう一度頼む)
             a.warnedOff = false;
+            a.view = m->crowd->View(a.index);  // (前の場所の通路の先にあった線などを残さない)
+            a.crossing.reset();
             return;
         }
     }
@@ -193,6 +195,7 @@ void NavWorld::Step(game_production::SystemContext& ctx) {
     Apply(scene);
     const NavSettings* settings = scene.Setting<NavSettings>();
     Worlds worlds = WorldsOf(scene);
+    ApplyDoorsAndLinks(scene, worlds);
     std::vector<const NavMoverInfo*> movers;
     if (ctx.registry) {
         for (const auto& m : ctx.registry->Contributions<NavMoverInfo>(kNavMoverPoint)) movers.push_back(m.item);
@@ -242,13 +245,23 @@ void NavWorld::Step(game_production::SystemContext& ctx) {
         }
         if (a.index < 0) return;
         navigation::NavCrowd& crowd = *meshes_[static_cast<size_t>(a.mesh)].crowd;
-        if (a.pending) {
+        if (a.pending && !a.waitingLink) {
             a.pending = false;
             if (a.hasTarget && !a.stopped) {
                 if (!crowd.SetTarget(a.index, a.target)) log::Warn("ナビ: 「{}」の行き先の近くにナビメッシュがありません", e.data.name);
                 a.arrived = false;
             } else {
                 crowd.ClearTarget(a.index);
+            }
+        }
+        // 「スクリプトにまかせる」つなぎの線: Detour が渡り始める前 (始めの近く) で止まり、スクリプトにイベント NavLink。
+        if (!a.waitingLink && a.hasTarget && !a.stopped && a.view.nextLink && a.view.toNextLink < p.radius * 2.25f + 0.4f) {
+            const SceneEntity* le = scene.Find(static_cast<int>(a.view.nextLink));
+            const Component* lc = le ? le->FindComponent(reflect::TypeOf<NavLink>().name) : nullptr;
+            if (lc && lc->Known() && static_cast<const NavLink*>(lc->value.Get())->move == NavLinkMove::Script) {
+                a.waitingLink = a.view.nextLink;
+                crowd.ClearTarget(a.index);
+                if (ctx.events) ctx.events->push_back({id, kNavLinkEvent, static_cast<double>(a.waitingLink), le->data.name, static_cast<int>(a.waitingLink)});
             }
         }
     });
@@ -265,6 +278,8 @@ void NavWorld::Step(game_production::SystemContext& ctx) {
         it = agents_.erase(it);
     }
 
+    StepObstacles(scene, worlds, ctx.dt);
+
     // 4: 群れを進める。
     for (Mesh& m : meshes_) {
         if (m.crowd && m.agents > 0) m.crowd->Update(ctx.dt);
@@ -274,12 +289,42 @@ void NavWorld::Step(game_production::SystemContext& ctx) {
     for (auto& [id, a] : agents_) {
         if (a.index < 0) continue;
         navigation::NavCrowd& crowd = *meshes_[static_cast<size_t>(a.mesh)].crowd;
+        const uint32_t ahead = a.view.nextLink;  // (前の刻みで通路の先にあった線: 今渡り始めた線)
+        const Vec3 before = a.view.position;
         a.view = crowd.View(a.index);
         a.remaining = a.hasTarget ? crowd.Remaining(a.index) : 0;
         SceneEntity* e = scene.Find(id);
         if (!e) continue;
         const Component* comp = e->FindComponent(type);
         const NavAgent* c = comp && comp->Known() ? static_cast<const NavAgent*>(comp->value.Get()) : nullptr;
+        // 跳ぶつなぎの線: Detour はまっすぐ動かすので、その間の高さ (放物線) を足す。
+        Vec3 shown = a.view.position;
+        if (!a.view.onLink) {
+            a.crossing.reset();
+        } else {
+            if (!a.crossing && ahead) {
+                const SceneEntity* le = scene.Find(static_cast<int>(ahead));
+                const Component* lc = le ? le->FindComponent(reflect::TypeOf<NavLink>().name) : nullptr;
+                const NavLink* l = lc && lc->Known() ? static_cast<const NavLink*>(lc->value.Get()) : nullptr;
+                if (l && l->move == NavLinkMove::Jump) {
+                    LinkCrossing x;
+                    x.link = ahead;
+                    x.from = before;
+                    for (const navigation::NavLinkInput& li : meshes_[static_cast<size_t>(a.mesh)].mesh->Links()) {
+                        if (li.id == ahead) x.to = Dist(before, li.a) > Dist(before, li.b) ? li.a : li.b;
+                    }
+                    const float speed = c ? std::max(c->speed, 0.1f) : 3.5f;
+                    const float flat = std::sqrt((x.to.x - x.from.x) * (x.to.x - x.from.x) + (x.to.z - x.from.z) * (x.to.z - x.from.z));
+                    x.duration = std::max(0.05f, flat / speed * 0.5f);  // (DetourCrowd が線を渡る時間と同じ)
+                    x.height = std::max(0.f, l->jumpHeight);
+                    a.crossing = x;
+                }
+            }
+            if (a.crossing) {
+                a.crossing->seconds += ctx.dt;
+                shown.y += JumpLift(a.crossing->height, a.crossing->seconds / a.crossing->duration);
+            }
+        }
         const Vec3 v = a.view.velocity;
         if (a.mover && a.mover->move) a.mover->move(scene, id, {v.x, 0, v.z});  // (キャラクター: その速さで歩く。ルートモーション: 何もしない)
         if (space3d::Transform* t = TransformOf(*e); t && a.view.onMesh && !(a.mover && a.mover->turns)) {
@@ -287,10 +332,10 @@ void NavWorld::Step(game_production::SystemContext& ctx) {
             const space3d::Mat4 parent = up != worlds.end() ? up->second : space3d::Mat4{};
             const auto self = worlds.find(id);
             space3d::WorldPlacement want = space3d::Decompose(self != worlds.end() ? self->second : space3d::Mat4{}, t->rotation);
-            if (!a.mover) want.position = a.view.position;  // (ほかの誰かが動かす物は、向きだけ)
+            if (!a.mover) want.position = shown;  // (ほかの誰かが動かす物は、向きだけ)
             if (c && c->turnSpeed > 0 && v.x * v.x + v.z * v.z > 0.0025f) want.rotation.y = TurnToward(want.rotation.y, v, c->turnSpeed * ctx.dt);
             *t = space3d::FromWorld(*t, parent, want);
-            if (!a.mover) a.written = a.view.position;
+            if (!a.mover) a.written = shown;  // (跳ぶ高さも込みで書いた所: 次の刻みで、ずれていなければ自分が書いた物)
             worlds[id] = space3d::WorldMatrix(parent, *t);
         }
         if (const auto self = worlds.find(id); self != worlds.end()) {
@@ -308,8 +353,147 @@ void NavWorld::Step(game_production::SystemContext& ctx) {
     }
 }
 
+void NavWorld::ApplyDoorsAndLinks(Scene& scene, const Worlds& worlds) {
+    // 閉じた扉 (部品「ナビのエリア」の「閉じている」) と、切ったつなぎの線 (「使える」を外した・部品を切った物)。
+    std::vector<navigation::NavAreaVolume> closed;
+    std::vector<uint32_t> off;
+    navigation::Hasher h;
+    for (const game_production::TreeEntry& t : scene.TreeOrder()) {
+        const SceneEntity& e = *t.entity;
+        if (const Component* c = e.FindComponent(reflect::TypeOf<NavArea>().name); c && c->Known() && t.activeInHierarchy) {
+            const NavArea& a = *static_cast<const NavArea*>(c->value.Get());
+            if (a.closed) {
+                const auto w = worlds.find(e.data.id);
+                if (auto v = AreaVolumeOf(a, w != worlds.end() ? w->second : space3d::Mat4{})) {
+                    for (const Vec2& p : v->outline) h.Float(p.x), h.Float(p.y);
+                    h.Float(v->minY), h.Float(v->maxY);
+                    closed.push_back(std::move(*v));
+                }
+            }
+        }
+        if (const Component* c = e.FindComponent(reflect::TypeOf<NavLink>().name); c && c->Known()) {
+            if (!t.activeInHierarchy || !static_cast<const NavLink*>(c->value.Get())->enabled) {
+                off.push_back(static_cast<uint32_t>(e.data.id));
+                h.Int(e.data.id);
+            }
+        }
+    }
+    if (h.Value() == doorsPrint_) return;
+    doorsPrint_ = h.Value();
+    for (Mesh& m : meshes_) {
+        m.mesh->SetClosedVolumes(closed);
+        for (const navigation::NavLinkInput& l : m.mesh->Links()) m.mesh->SetLinkEnabled(l.id, std::find(off.begin(), off.end(), l.id) == off.end());
+    }
+}
+
+void NavWorld::StepObstacles(Scene& scene, const Worlds& worlds, float dt) {
+    std::unordered_set<int> seen;
+    game_production::ForEachComponent(scene, reflect::TypeOf<NavObstacle>().name, [&](SceneEntity& e, Component& comp) {
+        const int id = e.data.id;
+        if (!seen.insert(id).second) return;
+        const NavObstacle& c = *static_cast<const NavObstacle*>(comp.value.Get());
+        const auto w = worlds.find(id);
+        const space3d::Mat4 m = w != worlds.end() ? w->second : space3d::Mat4{};
+        const Vec3 at{m.m[3][0], m.m[3][1], m.m[3][2]};
+        auto len = [&](int col) { return std::sqrt(m.m[col][0] * m.m[col][0] + m.m[col][1] * m.m[col][1] + m.m[col][2] * m.m[col][2]); };
+        const Vec3 size{std::fabs(c.size.x) * len(0), std::fabs(c.size.y) * len(1), std::fabs(c.size.z) * len(2)};
+        Obstacle& o = obstacles_[id];
+        if (!o.seen || Dist(at, o.last) > 0.005f) {
+            o.still = 0;
+            o.seen = true;
+            for (const auto& [mesh, hole] : o.holes) meshes_[static_cast<size_t>(mesh)].mesh->RemoveObstacle(hole);
+            o.holes.clear();
+        } else {
+            o.still += dt;
+        }
+        o.last = at;
+        // 止まった: ナビメッシュに穴をあける (動く障害物を使うナビメッシュだけ)。
+        if (c.carve && o.holes.empty() && o.still >= std::max(0.f, c.stillTime)) {
+            navigation::NavMesh::Obstacle ob;
+            ob.box = c.shape == NavObstacleShape::Box;
+            ob.center = ob.box ? at : Vec3{at.x, at.y - size.y * 0.5f, at.z};
+            ob.radius = size.x * 0.5f;
+            ob.height = size.y;
+            ob.half = {size.x * 0.5f, size.y * 0.5f, size.z * 0.5f};
+            ob.yawRadians = std::atan2(m.m[2][0], m.m[2][2]);
+            for (size_t i = 0; i < meshes_.size(); ++i) {
+                Mesh& mm = meshes_[i];
+                if (!mm.mesh->HasObstacles() || !Inside(mm.bounds, at, std::max(size.x, size.z))) continue;
+                if (const uint32_t hole = mm.mesh->AddObstacle(ob)) o.holes.push_back({static_cast<int>(i), hole});
+            }
+        }
+        // 穴が無い間 (動いている・穴をあけない): よける相手 (群れの中の、止まった者) を障害物の所に。
+        if (o.holes.empty()) {
+            if (o.index < 0) {
+                if (Mesh* mm = MeshAt(at); mm && mm->crowd) {
+                    navigation::AgentParams p;
+                    p.radius = std::max(0.1f, std::max(size.x, size.z) * 0.5f);
+                    p.height = std::max(0.1f, size.y);
+                    p.maxSpeed = 0;
+                    p.avoid = 0;
+                    o.index = mm->crowd->Add(at, p);
+                    if (o.index >= 0) o.mesh = static_cast<int>(mm - meshes_.data()), ++mm->agents;
+                }
+            } else if (meshes_[static_cast<size_t>(o.mesh)].crowd) {
+                meshes_[static_cast<size_t>(o.mesh)].crowd->MoveTo(o.index, at);
+            }
+        } else if (o.index >= 0) {
+            meshes_[static_cast<size_t>(o.mesh)].crowd->Remove(o.index);
+            --meshes_[static_cast<size_t>(o.mesh)].agents;
+            o.index = o.mesh = -1;
+        }
+    });
+    for (auto it = obstacles_.begin(); it != obstacles_.end();) {
+        if (seen.count(it->first)) {
+            ++it;
+            continue;
+        }
+        for (const auto& [mesh, hole] : it->second.holes) meshes_[static_cast<size_t>(mesh)].mesh->RemoveObstacle(hole);
+        if (it->second.index >= 0 && meshes_[static_cast<size_t>(it->second.mesh)].crowd) {
+            meshes_[static_cast<size_t>(it->second.mesh)].crowd->Remove(it->second.index);
+            --meshes_[static_cast<size_t>(it->second.mesh)].agents;
+        }
+        it = obstacles_.erase(it);
+    }
+    // 頼んだ穴の区画を作り直す (1 刻みに多くて 4 区画: docs/NAVIGATION.md 5-6)。
+    for (Mesh& m : meshes_) m.mesh->UpdateObstacles(dt, 4);
+}
+
+bool NavWorld::CompleteLink(Scene& scene, int entity) {
+    const auto it = agents_.find(entity);
+    if (it == agents_.end() || !it->second.waitingLink || it->second.mesh < 0) return false;
+    Agent& a = it->second;
+    Vec3 to = a.view.position;
+    for (const navigation::NavLinkInput& l : meshes_[static_cast<size_t>(a.mesh)].mesh->Links()) {
+        if (l.id == a.waitingLink) to = Dist(a.view.position, l.a) > Dist(a.view.position, l.b) ? l.a : l.b;
+    }
+    a.waitingLink = 0;
+    const Vec3 target = a.target;
+    const bool had = a.hasTarget;
+    if (!Warp(scene, entity, to)) return false;
+    if (had) SetDestination(entity, target);  // (行き先へ続ける)
+    return true;
+}
+
+bool NavWorld::SetLinkEnabled(Scene& scene, int linkEntity, bool enabled) {
+    SceneEntity* e = scene.Find(linkEntity);
+    Component* c = e ? e->FindComponent(reflect::TypeOf<NavLink>().name) : nullptr;
+    if (!c || !c->Known()) return false;
+    static_cast<NavLink*>(c->value.Get())->enabled = enabled;
+    return true;
+}
+
+bool NavWorld::SetAreaClosed(Scene& scene, int areaEntity, bool closed) {
+    SceneEntity* e = scene.Find(areaEntity);
+    Component* c = e ? e->FindComponent(reflect::TypeOf<NavArea>().name) : nullptr;
+    if (!c || !c->Known()) return false;
+    static_cast<NavArea*>(c->value.Get())->closed = closed;
+    return true;
+}
+
 void NavWorld::SetDestination(int entity, Vec3 target) {
     Agent& a = agents_[entity];
+    a.waitingLink = 0;
     a.hasTarget = true;
     a.target = target;
     a.arrived = false;

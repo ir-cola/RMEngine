@@ -349,6 +349,9 @@ inline Color NavRoute() { return IsLight ? Color::Hex(0xD9480F) : Color::Hex(0xF
 inline Color NavLink() { return IsLight ? Color::Hex(0x7048E8) : Color::Hex(0xB197FC); }
 inline float MapNavFillAlpha() { return IsLight ? 0.38f : 0.34f; }
 // ナビの動く者: 体の輪と今の速さの矢印・望む速さの矢印 (薄く)。
+// ナビの障害物と、閉じた扉 (ナビのエリアの「閉じている」)。
+inline Color SceneNavObstacle() { return IsLight ? Color::Hex(0xC2410C) : Color::Hex(0xFDBA74); }
+inline Color SceneNavClosed() { return IsLight ? Color::Hex(0xB91C1C) : Color::Hex(0xFCA5A5); }
 inline Color SceneNavAgent() { return IsLight ? Color::Hex(0x1C6FD1) : Color::Hex(0x74B3FF); }
 inline Color SceneNavDesired() { return Mix(SceneNavAgent(), SceneBackground(), 0.45f); }
 // 真上から見た地図 (気候のタブ) に塗った所の濃さ (色はユーザーのもの: 下の絵が透けるように)。

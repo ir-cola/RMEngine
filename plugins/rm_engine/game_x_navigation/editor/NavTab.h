@@ -29,13 +29,16 @@ struct NavTabState {
     RM_PROPERTY() int type = 0;     // 選んだエージェントの型 (NavAgentType::id。0: 選んだ範囲の型)
     RM_PROPERTY() Vec2 center{0, 0};  // 地図の真ん中 (ワールドの x, z)
     RM_PROPERTY() float halfWidth = 0;  // 地図の幅の半分 (m)。0: まだ (最初にシーン全体を見る)
+    RM_PROPERTY() bool fill = true;     // シーンビューで焼いた面を塗る
 };
 
 std::unique_ptr<game_production::SceneView> CreateNavTab();
 
-// 新しいエンティティ「ナビメッシュ」/「ナビのエリア」(Transform つき)。追加 ▸ ナビ と、タブの「ナビメッシュを置く」。
+// 新しいエンティティ「ナビメッシュ」/「ナビのエリア」/「ナビの動く者」/「つなぎの線」/「ナビの障害物」(Transform つき)。追加 ▸ ナビ と、タブの「ナビメッシュを置く」。
 int MakeVolume(game_production::Scene& scene, int parent, size_t index);
 int MakeArea(game_production::Scene& scene, int parent, size_t index);
 int MakeAgent(game_production::Scene& scene, int parent, size_t index);
+int MakeLink(game_production::Scene& scene, int parent, size_t index);
+int MakeObstacle(game_production::Scene& scene, int parent, size_t index);
 
 }  // namespace rm::game_x_navigation

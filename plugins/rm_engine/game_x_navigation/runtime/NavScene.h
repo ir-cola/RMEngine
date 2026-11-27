@@ -37,6 +37,9 @@ std::bitset<64> BlockedOf(const NavSettings& s);
 // 新しい型・エリアの番号 (今のどれとも違う。エリアは 1 .. 62、無ければ 0)。
 int NewAgentTypeId(const NavSettings& s);
 int NewAreaKindId(const NavSettings& s);
+// シーンビューに焼いたナビメッシュの面を塗るか (「ナビ」タブの「シーンビューで面を塗る」。ナビ × 3D の描き手が読む)。
+bool FillInSceneView();
+void SetFillInSceneView(bool on);
 // エリアの種類の、決まった順の色 (足したときの最初の色)。
 Color AreaKindColor(size_t n);
 
@@ -62,6 +65,11 @@ uint64_t Fingerprint(const game_production::Scene& scene, const Worlds& worlds, 
 // 形 (モデル自身の点と三角形) をワールドへ置いて `out` に足す (口 source が使う)。鏡写しの行列 (負の大きさ) は
 // 表が裏返るので、三角形の向きも戻す。
 void AddMeshTo(NavShape& out, std::span<const Vec3> local, std::span<const uint32_t> indices, const space3d::Mat4& world);
+
+// 部品「ナビのエリア」の柱 (ワールド: 真上から見た凸包と高さの範囲)。形が作れない: nullopt。
+std::optional<navigation::NavAreaVolume> AreaVolumeOf(const NavArea& a, const space3d::Mat4& world);
+// 部品「つなぎの線」(切ってある物は除く。「使える」は見ない)。id はエンティティの id。
+std::vector<navigation::NavLinkInput> LinksOf(const game_production::Scene& scene, const Worlds& worlds);
 
 // 指紋に部品を足す (口 source の fingerprint が使う): エンティティの番号・ワールド行列・部品の値 (保存する形の JSON)。
 void HashComponent(navigation::Hasher& h, const game_production::SceneEntity& e, const game_production::Component& c, const Worlds& worlds);

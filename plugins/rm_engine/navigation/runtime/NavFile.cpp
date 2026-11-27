@@ -1,5 +1,6 @@
 #include "rm_engine/navigation/runtime/NavFile.h"
 
+#include <charconv>
 #include <cstring>
 #include <format>
 
@@ -40,7 +41,9 @@ Vec3 JsonVec(const json::Value& v) {
 }
 
 // HEAD に書くキー (ほかは知らないキー)。
-constexpr const char* kKnown[] = {"kind", "format", "engine", "bounds", "tileSize", "tilesX", "tilesZ", "maxPolysPerTile", "agent", "fingerprint"};
+constexpr const char* kKnown[] = {"kind",  "format", "engine",          "bounds", "tileSize",    "tilesX",   "tilesZ",
+                                   "tileCells", "obstacles", "maxPolysPerTile", "agent",  "fingerprint", "tilePrints"};
+void PutF(std::string& s, float v) { s.append(reinterpret_cast<const char*>(&v), 4); }
 
 }  // namespace
 
@@ -60,6 +63,8 @@ std::string WriteNavFile(const NavData& data, const NavFileHead& head) {
     known.Set("tileSize", static_cast<double>(data.tileSize));
     known.Set("tilesX", static_cast<int64_t>(data.tilesX));
     known.Set("tilesZ", static_cast<int64_t>(data.tilesZ));
+    known.Set("tileCells", static_cast<int64_t>(data.tileCells));
+    known.Set("obstacles", data.obstacles);
     known.Set("maxPolysPerTile", static_cast<int64_t>(data.maxPolysPerTile));
     json::Value agent = json::Value::MakeObject();
     agent.Set("id", static_cast<int64_t>(head.agentType));
@@ -72,17 +77,41 @@ std::string WriteNavFile(const NavData& data, const NavFileHead& head) {
     agent.Set("cellHeight", static_cast<double>(data.agent.cellHeight));
     known.Set("agent", std::move(agent));
     known.Set("fingerprint", head.fingerprint);
+    json::Value prints = json::Value::MakeArray();
+    for (const uint64_t p : data.prints) prints.Push(FingerprintText(p));
+    known.Set("tilePrints", std::move(prints));
     for (const auto& m : h.Members()) known.Set(m.first, m.second);  // (知らないキーは後ろに)
 
     std::string out(kMagic, sizeof kMagic);
     PutU32(out, kNavFileFormat);
     Chunk(out, "HEAD", json::Write(known, false));
     for (const NavTile& t : data.tiles) {
+        if (!t.data.empty()) {
+            std::string body;
+            PutI32(body, t.x);
+            PutI32(body, t.z);
+            body.append(t.data);
+            Chunk(out, "TILE", body);
+        }
+        for (size_t i = 0; i < t.layers.size(); ++i) {
+            std::string body;
+            PutI32(body, t.x);
+            PutI32(body, t.z);
+            PutI32(body, static_cast<int32_t>(i));
+            body.append(t.layers[i]);
+            Chunk(out, "TCLY", body);
+        }
+    }
+    if (!data.links.empty()) {
         std::string body;
-        PutI32(body, t.x);
-        PutI32(body, t.z);
-        body.append(t.data);
-        Chunk(out, "TILE", body);
+        PutU32(body, static_cast<uint32_t>(data.links.size()));
+        for (const NavLinkInput& l : data.links) {
+            for (const float f : {l.a.x, l.a.y, l.a.z, l.b.x, l.b.y, l.b.z, l.radius}) PutF(body, f);
+            body.push_back(static_cast<char>(l.both ? 1 : 0));
+            body.push_back(static_cast<char>(l.area));
+            PutU32(body, l.id);
+        }
+        Chunk(out, "LINK", body);
     }
     return out;
 }
@@ -123,6 +152,13 @@ std::optional<NavData> ReadNavFile(std::string_view bytes, NavFileHead* head, st
             data.tilesX = static_cast<int>(j->Get("tilesX").AsInt());
             data.tilesZ = static_cast<int>(j->Get("tilesZ").AsInt());
             data.maxPolysPerTile = static_cast<int>(j->Get("maxPolysPerTile").AsInt());
+            data.tileCells = static_cast<int>(j->Get("tileCells").AsInt(64));
+            data.obstacles = j->Get("obstacles").AsBool(false);
+            for (const json::Value& p : j->Get("tilePrints").Items()) {
+                uint64_t v = 0;
+                if (p.IsString()) std::from_chars(p.AsString().data(), p.AsString().data() + p.AsString().size(), v, 16);
+                data.prints.push_back(v);
+            }
             const json::Value& a = j->Get("agent");
             data.agent.radius = static_cast<float>(a.Get("radius").AsDouble(0.3));
             data.agent.height = static_cast<float>(a.Get("height").AsDouble(1.8));
@@ -147,6 +183,34 @@ std::optional<NavData> ReadNavFile(std::string_view bytes, NavFileHead* head, st
             t.x = x, t.z = z;
             t.data.assign(body.substr(b));
             data.tiles.push_back(std::move(t));
+        } else if (std::memcmp(tag, "TCLY", 4) == 0) {
+            size_t b = 0;
+            int32_t x = 0, z = 0, layer = 0;
+            if (!Get(body, b, x) || !Get(body, b, z) || !Get(body, b, layer)) return fail("ナビメッシュのファイルが壊れています (区画が読めません)");
+            NavTile* t = nullptr;
+            for (NavTile& o : data.tiles) {
+                if (o.x == x && o.z == z) t = &o;
+            }
+            if (!t) {
+                data.tiles.push_back({x, z, {}, {}});
+                t = &data.tiles.back();
+            }
+            t->layers.emplace_back(body.substr(b));
+        } else if (std::memcmp(tag, "LINK", 4) == 0) {
+            size_t b = 0;
+            uint32_t n = 0;
+            if (!Get(body, b, n) || n > body.size()) return fail("ナビメッシュのファイルが壊れています (つなぎの線が読めません)");
+            for (uint32_t i = 0; i < n; ++i) {
+                NavLinkInput l;
+                float f[7];
+                uint8_t both = 0, area = 0;
+                for (float& v : f) {
+                    if (!Get(body, b, v)) return fail("ナビメッシュのファイルが壊れています (つなぎの線が読めません)");
+                }
+                if (!Get(body, b, both) || !Get(body, b, area) || !Get(body, b, l.id)) return fail("ナビメッシュのファイルが壊れています (つなぎの線が読めません)");
+                l.a = {f[0], f[1], f[2]}, l.b = {f[3], f[4], f[5]}, l.radius = f[6], l.both = both != 0, l.area = area;
+                data.links.push_back(l);
+            }
         }
         // (知らないタグ: 飛ばす)
     }

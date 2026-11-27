@@ -161,6 +161,17 @@ AgentView NavCrowd::View(int agent) const {
         default: v.target = AgentView::Target::Pending; break;
     }
     v.goal = a->corridor.getPathCount() > 0 ? Get(a->corridor.getTarget()) : v.position;
+    v.onLink = a->state == DT_CROWDAGENT_STATE_OFFMESH;
+    const auto* nav = static_cast<const dtNavMesh*>(impl_->mesh->Native());
+    for (int i = 0; i < a->ncorners && nav; ++i) {
+        if (!(a->cornerFlags[i] & DT_STRAIGHTPATH_OFFMESH_CONNECTION)) continue;
+        if (const dtOffMeshConnection* con = nav->getOffMeshConnectionByRef(a->cornerPolys[i])) {
+            v.nextLink = con->userId;
+            const float* c = &a->cornerVerts[i * 3];
+            v.toNextLink = std::sqrt((c[0] - a->npos[0]) * (c[0] - a->npos[0]) + (c[2] - a->npos[2]) * (c[2] - a->npos[2]));
+        }
+        break;
+    }
     return v;
 }
 

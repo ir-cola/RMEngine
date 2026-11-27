@@ -67,6 +67,10 @@ std::optional<std::vector<editor::inspector::Choice>> AreaFieldChoices(editor::S
     if (!FieldIs(reflect::TypeOf<NavArea>(), path, "area")) return std::nullopt;
     return AreaChoices(scene);
 }
+std::optional<std::vector<editor::inspector::Choice>> LinkChoices(editor::SoftwareHost&, const Scene& scene, int, const reflect::FieldPath& path) {
+    if (!FieldIs(reflect::TypeOf<NavLink>(), path, "area")) return std::nullopt;
+    return AreaChoices(scene);
+}
 
 // --- ナビの動く者と体の形を持つ部品 (物理のキャラクター: 口 body) の値が違うときの印と「合わせる」(憲法 2: 値は型だけが持つ) ---
 struct BodyMismatch {
@@ -169,6 +173,20 @@ int MakeArea(Scene& scene, int parent, size_t index) {
     return id;
 }
 
+int MakeLink(Scene& scene, int parent, size_t index) {
+    const int id = scene.Create(TrU8("つなぎの線"), parent, index);
+    game_production::AddComponentTo<space3d::Transform>(scene, id);
+    game_production::AddComponentTo<NavLink>(scene, id);
+    return id;
+}
+
+int MakeObstacle(Scene& scene, int parent, size_t index) {
+    const int id = scene.Create(TrU8("ナビの障害物"), parent, index);
+    game_production::AddComponentTo<space3d::Transform>(scene, id);
+    game_production::AddComponentTo<NavObstacle>(scene, id);
+    return id;
+}
+
 void RegisterEditor(editor::PluginRegistry& registry) {
     // 「ナビ」タブ: 焼く・古い印・経路を試す・型とエリア (NavTab.h)。
     static const game_production::ViewPanelInfo kTab{"navigation", TrKey(L"ナビ"), &CreateNavTab};
@@ -181,6 +199,8 @@ void RegisterEditor(editor::PluginRegistry& registry) {
         {.label = TrKey(L"ナビメッシュ"), .folder = TrKey(L"ナビ"), .make = &MakeVolume},
         {.label = TrKey(L"ナビのエリア"), .folder = TrKey(L"ナビ"), .make = &MakeArea},
         {.label = TrKey(L"ナビの動く者"), .folder = TrKey(L"ナビ"), .make = &MakeAgent},
+        {.label = TrKey(L"つなぎの線"), .folder = TrKey(L"ナビ"), .make = &MakeLink},
+        {.label = TrKey(L"ナビの障害物"), .folder = TrKey(L"ナビ"), .make = &MakeObstacle},
     };
     for (const auto& item : kItems) registry.Contribute(game_production::kCreateItemPoint, item);
     // 部品の欄の型・エリアをドロップダウンで。
@@ -193,6 +213,8 @@ void RegisterEditor(editor::PluginRegistry& registry) {
     registry.Contribute(game_production::kComponentLookPoint, kAgentLook);
     static const game_production::ComponentLook kAreaLook{.type = &reflect::TypeOf<NavArea>, .choices = &AreaFieldChoices};
     registry.Contribute(game_production::kComponentLookPoint, kAreaLook);
+    static const game_production::ComponentLook kLinkLook{.type = &reflect::TypeOf<NavLink>, .choices = &LinkChoices};
+    registry.Contribute(game_production::kComponentLookPoint, kLinkLook);
     // 書き出し: 焼いたナビメッシュ (.rmnav)。
     static const game_production::ExportBaker kBaker{&BakeNav, &NeedsNav};
     registry.Contribute(game_production::kExportBakePoint, kBaker);

@@ -18,6 +18,7 @@
 #include "rm_engine/game_production/runtime/Systems.h"
 #include "rm_engine/game_x_navigation/runtime/Components.h"
 #include "rm_engine/game_x_navigation/runtime/NavPorts.h"
+#include "rm_engine/game_x_navigation/runtime/NavScene.h"
 #include "rm_engine/navigation/runtime/Crowd.h"
 
 #include <map>
@@ -31,6 +32,19 @@
 namespace rm::game_x_navigation {
 
 inline constexpr char kNavArrivedEvent[] = "NavArrived";
+inline constexpr char kNavLinkEvent[] = "NavLink";  // 「スクリプトにまかせる」つなぎの線の始めに来た (text: 線の名前・entity: 線)
+
+// つなぎの線を渡る 1 回 (跳ぶ: 放物線の高さを足す)。
+struct LinkCrossing {
+    uint32_t link = 0;
+    Vec3 from{0, 0, 0}, to{0, 0, 0};
+    float seconds = 0, duration = 0.5f, height = 0;
+};
+// 跳ぶ線の上の高さ (t: 0 .. 1)。始めと終わりで 0、真ん中で `height`。
+inline float JumpLift(float height, float t) {
+    t = t < 0 ? 0 : t > 1 ? 1 : t;
+    return 4.f * height * t * (1.f - t);
+}
 
 class NavWorld {
 public:
@@ -55,6 +69,17 @@ public:
         const NavMoverInfo* mover = nullptr;  // 動かす道 (null: ナビが Transform を)
         const NavMoverInfo* noted = nullptr;  // 知らせた道
         float yaw = 0;                               // 体の向き (ワールドの Y の角度。度。+Z が 0)
+        uint32_t nextLink = 0;      // 前の刻みで、通路の先にあったつなぎの線
+        std::optional<LinkCrossing> crossing;  // 渡っている線 (跳ぶ)
+        uint32_t waitingLink = 0;   // 「スクリプトにまかせる」線の始めで待っている (CompleteLink で続ける)
+    };
+    // ナビの障害物: 止まっている時間・あけた穴・動いている間のよける相手 (群れの中の止まった者)。
+    struct Obstacle {
+        Vec3 last{0, 0, 0};
+        float still = 0;
+        bool seen = false;
+        std::vector<std::pair<int, uint32_t>> holes;  // (ナビメッシュ, 穴)
+        int mesh = -1, index = -1;                     // よける相手
     };
 
     // システム「ナビ」の 1 刻み。
@@ -74,6 +99,12 @@ public:
     // 名前で指すエリア (無い名前: false。警告は 1 回)。
     bool SetAreaCost(const game_production::Scene& scene, std::string_view name, float cost);
     bool SetAreaOpen(const game_production::Scene& scene, std::string_view name, bool open);
+    // 「スクリプトにまかせる」線を渡り終えた: 線の終わりへ移って、行き先へ続ける。false: 待っていない。
+    bool CompleteLink(game_production::Scene& scene, int entity);
+    // 部品「つなぎの線」の「使える」・部品「ナビのエリア」の「閉じている」を変える (Play のシーンの部品を書く)。
+    static bool SetLinkEnabled(game_production::Scene& scene, int linkEntity, bool enabled);
+    static bool SetAreaClosed(game_production::Scene& scene, int areaEntity, bool closed);
+    const std::unordered_map<int, Obstacle>& Obstacles() const { return obstacles_; }
 
     // `at` を含むナビメッシュ (型 `agentType`。0: どれでも)。無ければ最初のもの (読んでいない: null)。
     Mesh* MeshAt(Vec3 at, int agentType = 0);
@@ -85,6 +116,8 @@ public:
 
 private:
     void Apply(game_production::Scene& scene);
+    void ApplyDoorsAndLinks(game_production::Scene& scene, const Worlds& worlds);
+    void StepObstacles(game_production::Scene& scene, const Worlds& worlds, float dt);
     void Place(Agent& a, int entity, Vec3 at, const navigation::AgentParams& params, const NavAgent& c, std::string_view name);
 
     bool loaded_ = false;
@@ -93,6 +126,8 @@ private:
     std::map<int, float> costs_;  // エリアの id -> 費用 (スクリプトが変えた物)
     std::map<int, bool> open_;    // エリアの id -> 通れる (スクリプトが変えた物)
     std::vector<std::string> warnedNames_;
+    std::unordered_map<int, Obstacle> obstacles_;
+    uint64_t doorsPrint_ = 0;  // 閉じた扉と切った線 (変わったときだけ多角形の印をかけ直す)
 };
 
 // 再生中のシーンのナビの世界 (最初に呼んだときに作る)。

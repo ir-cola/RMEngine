@@ -7,6 +7,7 @@
 
 #define RM_PART_NAV "rm_engine.game_x_navigation.nav"
 #define RM_PART_NAV_VERSION 1u
+#define RM_PART_NAV_VERSION2 2u /* 版 2: 1 の後ろに、つなぎの線と扉 (RmNavApi2) */
 
 #ifdef __cplusplus
 extern "C" {
@@ -40,6 +41,14 @@ typedef struct RmNavApi {
     int (*setAreaCost)(void* ctx, const char* name, float cost);
     int (*setAreaOpen)(void* ctx, const char* name, int open);
 } RmNavApi;
+
+/* 版 2 (段階 4): 版 1 の表をそのまま先頭に持ち、後ろに足す。 */
+typedef struct RmNavApi2 {
+    RmNavApi v1;
+    int (*completeLink)(void* ctx, uint64_t entity);                     /* 「スクリプトにまかせる」線を渡り終えた */
+    int (*setLinkEnabled)(void* ctx, uint64_t linkEntity, int enabled);  /* 部品「つなぎの線」の「使える」 */
+    int (*setAreaClosed)(void* ctx, uint64_t areaEntity, int closed);    /* 部品「ナビのエリア」の「閉じている」(扉) */
+} RmNavApi2;
 
 #ifdef __cplusplus
 }

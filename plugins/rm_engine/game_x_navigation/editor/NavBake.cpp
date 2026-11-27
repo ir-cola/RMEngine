@@ -4,6 +4,7 @@
 #include "rm_engine/navigation/runtime/Bake.h"
 
 #include <chrono>
+#include <optional>
 #include <system_error>
 
 namespace rm::game_x_navigation {
@@ -40,24 +41,32 @@ BakeOutcome RunBake(const BakeJob& job, std::stop_token stop, const std::functio
         return r;
     }
     r.triangles = input.Triangles();
-    navigation::BakeOptions opt;
-    opt.agent = AgentOf(job.type);
-    opt.bounds = job.volume.bounds;
-    std::string err;
-    if (!navigation::Bake(input, opt, stop, progress, r.data, &err)) {
-        r.stopped = err.empty();
-        r.error = err;
-        return r;
-    }
-    // 前のファイルの、このバージョンが知らないキーは残す (憲法 6)。
+    // 前のファイル: 知らないキーは残す (憲法 6)。変わった所だけ焼くときは、その区画も使う。
     r.head = job.head;
+    r.partial = job.partial;
+    std::optional<navigation::NavData> previous;
     std::error_code ec;
     if (std::filesystem::exists(job.out, ec)) {
         std::string why;
         if (const auto bytes = platform::ReadFileBytes(job.out, &why)) {
             navigation::NavFileHead old;
-            if (navigation::ReadNavFile(*bytes, &old, &why)) r.head.extra = old.extra;
+            previous = navigation::ReadNavFile(*bytes, &old, &why);
+            if (previous) r.head.extra = old.extra;
         }
+    }
+    navigation::BakeOptions opt;
+    opt.agent = AgentOf(job.type);
+    opt.bounds = job.volume.bounds;
+    opt.obstacles = job.volume.volume.obstacles;
+    if (job.partial && previous) {
+        opt.previous = &*previous;
+        opt.bakedTiles = &r.bakedTiles;
+    }
+    std::string err;
+    if (!navigation::Bake(input, opt, stop, progress, r.data, &err)) {
+        r.stopped = err.empty();
+        r.error = err;
+        return r;
     }
     if (stop.stop_requested()) {
         r.stopped = true;

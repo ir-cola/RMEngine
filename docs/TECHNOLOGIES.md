@@ -1355,10 +1355,28 @@ plugins/            ソフトはプラグインで足す (いまは「ゲーム�
 - **どこ** — `plugins/rm_engine/navigation/runtime/Crowd.*`・`game_x_navigation/runtime/NavWorld.*`・`NavPorts.h`・`editor/Connector.cpp` (印)・`editor/NavTab.cpp` (型の一覧)、
   `game_x_animation/runtime/ParamFeed.h`・`AnimationSystem.cpp`、`navigation_x_animation/`、`navigation_x_physics/`、`game_production/editor/ComponentLook.h`、`tests/TestNavigation.cpp`
 
+### つなぎの線・扉・止まったら穴 (DetourTileCache)・変わった区画だけ焼く・面を塗る (2026-11-28)
+
+- **何か** — **オフメッシュリンク**: ナビメッシュの面の外を通る 2 点の線 (始め・終わり・半径・向き)。Detour は線を 1 つの「多角形」として持ち、
+  始めと終わりを近くの面につなぐので、道探し (A*) はふつうに通る。群れは線の上をまっすぐ動かす (その間の動きは使う側が決めてよい)。
+  **DetourTileCache**: 区画ごとに「層」(高さと歩けるかの 2D の地図) を持っておき、障害物 (円柱・箱) を足すと、その区画の層に穴を描いてから
+  ナビメッシュの区画だけを作り直す (速い。1 刻みの数に上限)。**リージョンを分ける印**: Recast は同じエリアの番号の所を 1 つのリージョンにまとめるので、
+  柱の中に別の番号を付けて分け、多角形にした後で番号を戻す (Detour のエリアは下の 6 ビットだけ)。**区画ごとの指紋**: 区画に効く入力 (まわりの三角形・
+  柱・線・体の形) だけのハッシュ。同じなら前の区画をそのまま使う
+- **何に使っているか** — 部品「つなぎの線」(歩く・跳ぶ = 放物線 4ht(1−t) を見た目に足す・スクリプトにまかせる = 手前で止めてイベント)、
+  扉 (閉じた柱の中に真ん中がある多角形の印を通れないに)、「ナビの障害物」(止まったら穴・動いている間は速さ 0 の群れの者)、
+  「変わった所だけ」と「自動で焼き直す」、シーンビューの塗り (Direct3D 11 の半透明の三角形: アルファブレンド・深度テストあり・書かない)
+- **なぜそれか** — 扉と線の「使える」は多角形の印だけで済むので、焼き直さずにすぐ効く。障害物を毎刻み作り直すと重いので、止まった物だけ穴に。
+  指紋で区画を選ぶと、全部焼いた物と同じバイトになる (テストで確かめられる)
+- **どこ** — `plugins/rm_engine/navigation/runtime/Bake.cpp` (指紋・層・線)・`Query.cpp` (層から作る・障害物・扉・線の印)・`DetourShared.h`・`NavFile.cpp` (`TCLY`・`LINK`)・
+  `Crowd.cpp` (線の先読み)、`game_x_navigation/runtime/NavWorld.cpp` (跳ぶ・待つ・障害物)・`ScriptNav.cpp` (版 2)・`editor/NavTab.cpp`・`NavLines.cpp`、
+  `navigation_x_3d/runtime/NavFill.cpp`、`tests/TestNavigation.cpp`
+
 ## 追記の記録
 
 | 日付 | 足したこと |
 |---|---|
+| 2026-11-28 | つなぎの線 (オフメッシュリンク)・扉 (リージョンを分ける印)・止まったら穴 (DetourTileCache)・区画ごとの指紋で変わった所だけ焼く・シーンビューの半透明の塗り |
 | 2026-11-27 | 揺れる骨 (Verlet・長さを保つ・球から押し出す・決まった刻み)・VRM の揺れの設定 (VRMC_springBone / secondaryAnimation) |
 | 2026-11-27 | ブレンドシェイプ (形の差を重みで足す・Compute Shader で頂点を作る: 生のバイトのバッファと UAV・FBX の BlendShape) |
 | 2026-11-27 | IK (2 本の骨を余弦定理で・回転を骨の空間へ戻す・足を坂に: 光線と高さのならし)・配列の要素の中のドロップダウン |

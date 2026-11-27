@@ -171,6 +171,8 @@ public:
         state_.tool = std::clamp(state_.tool, 0, kTools - 1);
         if (!FindAreaKind(*settings, state_.area)) state_.area = settings->areas.empty() ? 0 : settings->areas.front().id;
         UpdateStatus(host, *settings);
+        AutoBake(host, *settings);
+        SetFillInSceneView(state_.fill);
 
         DrawMap(c, mapR, host, *settings);
         if (side.w >= 60 && side.h >= 60) DrawSide(c, side, host, *settings);
@@ -192,6 +194,10 @@ private:
         Status status = Status::None;
         uint64_t fingerprint = 0;
         std::chrono::steady_clock::time_point at{};
+        // 自動で焼き直す: 指紋が変わらなくなってからの時刻と、最後に自動で焼いた指紋 (失敗しても繰り返さない)。
+        uint64_t settled = 0;
+        std::chrono::steady_clock::time_point settledAt{};
+        uint64_t autoBaked = 0;
     };
 
     static bool CanEdit(const SceneViewHost& host) { return !host.playing && host.setting != nullptr; }
@@ -261,13 +267,33 @@ private:
             l.status = navigation::FingerprintText(l.fingerprint) == p->head.fingerprint ? Status::Fresh : Status::Stale;
         }
     }
+    // 部品「ナビメッシュ」の「自動で焼き直す」: 古くなって 1 秒そのまま (動かし終わった) なら、変わった所だけ焼き直す。
+    // このタブを開いている間だけ (docs/NAVIGATION.md 15)。
+    void AutoBake(SceneViewHost& host, const NavSettings& settings) {
+        if (!CanEdit(host) || worker_.Busy() || baking_ != 0 || !queue_.empty()) return;
+        const auto now = std::chrono::steady_clock::now();
+        for (const NavVolume& v : volumes_) {
+            if (!v.volume.autoBake) continue;
+            Look& l = looks_[v.entity];
+            if (l.status != Status::Stale || l.fingerprint == 0) continue;
+            if (l.fingerprint != l.settled) {
+                l.settled = l.fingerprint;
+                l.settledAt = now;
+                continue;
+            }
+            if (now - l.settledAt < std::chrono::seconds(1) || l.autoBaked == l.fingerprint) continue;
+            l.autoBaked = l.fingerprint;
+            StartBake(host, settings, v.entity, true);
+            return;
+        }
+    }
     Status StatusOf(int entity) const {
         const auto it = looks_.find(entity);
         return it != looks_.end() ? it->second.status : Status::None;
     }
 
     // --- 焼く -----------------------------------------------------------------------------------
-    void StartBake(SceneViewHost& host, const NavSettings& settings, int entity) {
+    void StartBake(SceneViewHost& host, const NavSettings& settings, int entity, bool partial = false) {
         const NavVolume* v = FindVol(entity);
         if (!v || host.playing || worker_.Busy()) return;
         const NavAgentType* type = FindAgentType(settings, v->volume.agentType);
@@ -300,6 +326,7 @@ private:
         job.head.agentType = type->id;
         job.head.agentName = type->name;
         job.head.fingerprint = navigation::FingerprintText(Fingerprint(host.scene, worlds_, *v, *type, job.sources, &assets));
+        job.partial = partial;
         errors_.erase(entity);
         notes_.erase(entity);
         baking_ = entity;
@@ -313,7 +340,11 @@ private:
             });
             post([this, out = std::move(out)]() mutable { pending_.push_back(std::move(out)); });
         });
-        log::Info("ナビ: 「{}」を焼きます", v->name);
+        if (partial) {
+            log::Info("ナビ: 「{}」の変わった所を焼き直します", v->name);
+        } else {
+            log::Info("ナビ: 「{}」を焼きます", v->name);
+        }
     }
 
     void StopBake() {
@@ -344,9 +375,16 @@ private:
             RememberPreview(ref, out.file, out.data, out.head);
             size_t polys = 0;
             if (const NavPreview* p = FindPreview(host.host, ref)) polys = p->polygonCount;
-            notes_[out.entity] = TrF(L"{:.1f} 秒・区画 {}・多角形 {}・三角形 {}", out.ms / 1000.0, out.data.tiles.size(), polys, out.triangles);
-            log::Info("ナビ: 焼きました ({}): {:.1f} 秒・区画 {}・多角形 {}・三角形 {}", PathToUtf8(out.file.filename()), out.ms / 1000.0, out.data.tiles.size(), polys,
-                      out.triangles);
+            const size_t tiles = out.data.tilesX > 0 && out.data.tilesZ > 0 ? static_cast<size_t>(out.data.tilesX) * static_cast<size_t>(out.data.tilesZ) : 0;
+            if (out.bakedTiles >= 0) {
+                notes_[out.entity] = TrF(L"{:.1f} 秒・焼き直した区画 {} / {}・多角形 {}", out.ms / 1000.0, out.bakedTiles, tiles, polys);
+                log::Info("ナビ: 変わった所を焼き直しました ({}): {:.1f} 秒・区画 {} / {}・多角形 {}", PathToUtf8(out.file.filename()), out.ms / 1000.0, out.bakedTiles,
+                          tiles, polys);
+            } else {
+                notes_[out.entity] = TrF(L"{:.1f} 秒・区画 {}・多角形 {}・三角形 {}", out.ms / 1000.0, out.data.tiles.size(), polys, out.triangles);
+                log::Info("ナビ: 焼きました ({}): {:.1f} 秒・区画 {}・多角形 {}・三角形 {}", PathToUtf8(out.file.filename()), out.ms / 1000.0, out.data.tiles.size(),
+                          polys, out.triangles);
+            }
             if (out.data.tiles.empty()) errors_[out.entity] = TrU8("歩ける所がありません (床が範囲の中にあるか、坂が急すぎないかを見てください)");
             // 部品の「焼いた物」が違う (初めて焼いた) ときだけ、その欄を変える = Undo の 1 件。
             if (host.component && !ref.Empty()) {
@@ -771,15 +809,22 @@ private:
         const bool can = CanEdit(host) && !busy && FindVol(state_.volume);
         const float half = std::floor((r.w - 6) * 0.5f);
         if (w::Button(c, "nav.bake", {r.x, y, half, kRow}, Tr(L"焼く"), w::ButtonKind::Primary, can)) StartBake(host, settings, state_.volume);
+        const NavVolume* chosen = FindVol(state_.volume);
+        const bool baked = chosen && !chosen->volume.baked.Empty() && StatusOf(state_.volume) != Status::NotBaked && StatusOf(state_.volume) != Status::Missing;
+        if (w::Button(c, "nav.bakeChanged", {r.x + half + 6, y, r.w - half - 6, kRow}, Tr(L"変わった所だけ"), w::ButtonKind::Secondary, can && baked)) {
+            StartBake(host, settings, state_.volume, true);
+        }
+        y += kRow + 6;
         if (busy) {
-            if (w::Button(c, "nav.stop", {r.x + half + 6, y, r.w - half - 6, kRow}, Tr(L"やめる"))) StopBake();
-        } else if (w::Button(c, "nav.bakeAll", {r.x + half + 6, y, r.w - half - 6, kRow}, Tr(L"全部を焼く"), w::ButtonKind::Secondary, can && volumes_.size() > 1)) {
+            if (w::Button(c, "nav.stop", {r.x, y, half, kRow}, Tr(L"やめる"))) StopBake();
+        } else if (w::Button(c, "nav.bakeAll", {r.x, y, half, kRow}, Tr(L"全部を焼く"), w::ButtonKind::Secondary, can && volumes_.size() > 1)) {
             queue_.clear();
             for (const NavVolume& v : volumes_) {
                 if (v.entity != state_.volume) queue_.push_back(v.entity);
             }
             StartBake(host, settings, state_.volume);
         }
+        w::Checkbox(c, "nav.fill", {r.x + half + 6, y, r.w - half - 6, kRow}, state_.fill, Tr(L"シーンビューで面を塗る"));
         y += kRow + 6;
         if (busy) {
             const int total = progress_->total.load(), done = progress_->done.load();

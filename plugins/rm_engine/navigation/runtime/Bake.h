@@ -9,6 +9,12 @@
 //   区画は互いに関係しないので、スレッドに並べる (CPU の数 - 1、多くて 8)。結果は区画の順に並べるので、
 //   同じ入力ならスレッドの数によらず同じバイトになる (時刻も入れない)。
 //
+//   つなぎの線 (NavInput::links) は、始めのある区画に入れる (Detour のオフメッシュリンク)。
+//   動く障害物を使う (obstacles) ときは、3 の後で高さの層 (DetourTileCache の層) にして持つ: ゲームの中で
+//   障害物のまわりの区画だけを、層から作り直す (4 から後はそのとき)。
+//   変わった所だけ (previous): 区画ごとの指紋 (その区画に触れる三角形・エリアの形・つなぎの線・体の形) が前と同じ区画は、
+//   前に焼いた物をそのまま使う (全部焼いたときと同じバイトになる)。
+//
 // 作業スレッドで呼ぶ (エディターの「焼く」)。`stop` が立つと途中でやめて false (*error は空)。
 // 純粋 (ファイルも描画もない)。tests/TestNavigation.cpp でテストする。
 
@@ -23,8 +29,11 @@ namespace rm::navigation {
 struct BakeOptions {
     NavAgent agent;
     NavBounds bounds;
-    int tileCells = 64;  // 区画の一辺のマスの数
-    int threads = 0;     // 0: CPU の数 - 1 (多くて 8)。1: このスレッドだけ
+    int tileCells = 64;            // 区画の一辺のマスの数
+    int threads = 0;               // 0: CPU の数 - 1 (多くて 8)。1: このスレッドだけ
+    bool obstacles = false;        // 動く障害物を使う (区画が層を持つ)
+    const NavData* previous = nullptr;  // 前に焼いた物 (変わった区画だけ焼く。形が合わなければ全部)
+    int* bakedTiles = nullptr;     // 焼いた区画の数 (前の物を使った区画は数えない)
 };
 
 // 区画の数の上限 (細かすぎる・広すぎるときは焼かずに理由を返す)。

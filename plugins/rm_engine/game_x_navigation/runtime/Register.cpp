@@ -19,6 +19,10 @@ void RegisterRuntime(RuntimeRegistry& registry) {
     registry.Contribute(kComponentPoint, kArea);
     static const ComponentInfo kAgent{.type = &reflect::TypeOf<NavAgent>, .space = "3d", .folder = "ナビ"};
     registry.Contribute(kComponentPoint, kAgent);
+    static const ComponentInfo kLink{.type = &reflect::TypeOf<NavLink>, .space = "3d", .folder = "ナビ"};
+    registry.Contribute(kComponentPoint, kLink);
+    static const ComponentInfo kObstacle{.type = &reflect::TypeOf<NavObstacle>, .space = "3d", .folder = "ナビ"};
+    registry.Contribute(kComponentPoint, kObstacle);
     // シーンの設定「ナビ」: エージェントの型とエリアの種類 (「ナビ」タブで変える)。
     static const game_production::SceneSettingInfo kSettings{.type = &reflect::TypeOf<NavSettings>};
     registry.Contribute(game_production::kSceneSettingPoint, kSettings);
@@ -27,6 +31,7 @@ void RegisterRuntime(RuntimeRegistry& registry) {
     registry.Contribute(game_production::kSystemPoint, kSystem);
     // スクリプト: 行き先・止まる・道だけを探す・一番近い点・でたらめな点・エリアの費用 (sdk/RMNav.h)。
     registry.Contribute(game_production::kScriptApiPoint, ScriptNavPart());
+    registry.Contribute(game_production::kScriptApiPoint, ScriptNavPart2());
 }
 
 }  // namespace rm::game_x_navigation
