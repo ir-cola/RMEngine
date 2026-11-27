@@ -1,0 +1,10 @@
+{
+  "ナビ × アニメーション": "Navigation × Animation",
+  "ナビ: 速さ (m/s)": "Nav: speed (m/s)",
+  "ナビ: 欲しい速さ (m/s)": "Nav: desired speed (m/s)",
+  "ナビ: 横の速さ (体から見て。右が +)": "Nav: sideways speed (body space, right is +)",
+  "ナビ: 前の速さ (体から見て)": "Nav: forward speed (body space)",
+  "ナビ: 向きの差 (度。右が +)": "Nav: turn angle (degrees, right is +)",
+  "ナビ: 残りの距離 (m)": "Nav: remaining distance (m)",
+  "ナビ: 着いた (1 / 0)": "Nav: arrived (1 / 0)"
+}

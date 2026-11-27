@@ -42,6 +42,8 @@
 #include "rm_engine/navigation_x_3d/runtime/Register.h"
 #include "rm_engine/navigation_x_physics/runtime/Id.h"
 #include "rm_engine/navigation_x_physics/runtime/Register.h"
+#include "rm_engine/navigation_x_animation/runtime/Id.h"
+#include "rm_engine/navigation_x_animation/runtime/Register.h"
 
 namespace rm {
 
@@ -66,6 +68,7 @@ std::span<const RuntimePlugin> RuntimePlugins() {
         {game_x_navigation::kPluginId, &game_x_navigation::RegisterRuntime},
         {navigation_x_3d::kPluginId, &navigation_x_3d::RegisterRuntime},
         {navigation_x_physics::kPluginId, &navigation_x_physics::RegisterRuntime},
+        {navigation_x_animation::kPluginId, &navigation_x_animation::RegisterRuntime},
     };
     return kPlugins;
 }

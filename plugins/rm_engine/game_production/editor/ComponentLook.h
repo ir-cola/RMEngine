@@ -12,7 +12,9 @@
 #include "core/reflect/Data.h"
 #include "editor/inspector/Inspector.h"
 
+#include <functional>
 #include <optional>
+#include <string>
 #include <span>
 #include <vector>
 
@@ -27,6 +29,13 @@ struct GameSettings;
 
 // PluginRegistry の口: 項目は ComponentLook (static)。
 inline constexpr char kComponentLookPoint[] = "rm_engine.game_production.component_look";
+
+// ComponentLook::fixes の行ができること (行にコピーして持たせる: 行はメニューが閉じた後に動く)。
+struct ComponentFixHost {
+    editor::SoftwareHost* host = nullptr;
+    // 開いているシーン (部品も、シーンの設定も) を `change` で変える。Undo は `label` (UTF-8・日本語) の 1 件。
+    std::function<void(std::string label, std::function<void(Scene& scene)> change)> edit;
+};
 
 struct ComponentLook {
     const reflect::TypeDesc& (*type)();  // 対象の部品の型
@@ -57,6 +66,13 @@ struct ComponentLook {
     // インスペクターを描くたびに呼ぶので、重いもの (ファイルを読む) は自分で覚えておく。
     std::optional<std::vector<editor::inspector::Choice>> (*choices)(editor::SoftwareHost& host, const Scene& scene, int entity,
                                                                     const reflect::FieldPath& path) = nullptr;
+
+    // 省略可: ブロックの見出しの下に足す印 (ナビの動く者: 「キャラクターと体の形が違います」)。空: 何も足さない。描くたびに呼ぶ。
+    std::wstring (*note)(editor::SoftwareHost& host, const Scene& scene, int entity) = nullptr;
+    // 省略可: 欄の上の 1 行の「直す」(fixLabel() という名前の行と、これらのドロップダウン: 「キャラクターに合わせる」)。
+    // 行は host.edit でシーン (と設定) を変える = Undo の 1 件。空: 行なし。Play 中は出さない。
+    std::vector<editor::w::Action> (*fixes)(const ComponentFixHost& host, const Scene& scene, int entity) = nullptr;
+    std::wstring (*fixLabel)() = nullptr;
 
     bool HasDerived() const { return derivedType && derive && underive && ownLabel && derivedLabel; }
 };

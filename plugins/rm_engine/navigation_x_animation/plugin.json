@@ -1,0 +1,15 @@
+{
+  "format": 1,
+  "author": "rm_engine",
+  "name": "navigation_x_animation",
+  "displayName": "ナビ × アニメーション",
+  "version": "0.0.1",
+  "connectorFor": { "author": "rm_engine", "name": "game_x_navigation" },
+  "requires": [
+    { "author": "rm_engine", "name": "game_x_navigation" },
+    { "author": "rm_engine", "name": "game_x_animation" },
+    { "author": "rm_engine", "name": "game_production" },
+    { "author": "rm_engine", "name": "navigation" },
+    { "author": "rm_engine", "name": "space3d" }
+  ]
+}

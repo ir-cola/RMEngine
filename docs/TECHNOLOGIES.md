@@ -882,6 +882,7 @@ plugins/            ソフトはプラグインで足す (いまは「ゲーム�
 
 | 技術 | 使う所 | 状態 |
 |---|---|---|
+| 2026-11-27 | 群れでよける (速さの候補を試す・離れる強さ)・通路を保って外から動かす・動かす人は 1 人だけ (口 mover の order)・パラメーターの送り手 (口 param_feed)・部品の注記と直す行 |
 | 2026-11-27 | 動く者を歩かせる (DetourCrowd の通路・角の先読み・分けて探す・Play の間だけの世界・スクリプトへの C の表・見本の焼いた物をテストで見張る) |
 | 2026-11-16 | 文字の細かい見た目 (DirectWrite のテキストレイアウト)・動画を流す (Media Engine と GPU のテクスチャ) を足した |
 | 2026-11-16 | 影・発光・ぼかしを Direct2D の効果で (コマンドリスト) を足した |
@@ -1338,6 +1339,21 @@ plugins/            ソフトはプラグインで足す (いまは「ゲーム�
 - **VRM の揺れの設定** — VRoid などの VRM は glTF の拡張に揺れの設定を持つ: VRM 1.0 は `VRMC_springBone` (springs の joints を順に・colliders の sphere / capsule)、VRM 0.x は `VRM.secondaryAnimation` (boneGroups: その骨と下全部・colliderGroups。値は Unity の向きなので X を返す・綴りは stiffiness)。式が同じなので値をそのまま写す。焼くと `.rmmesh` の `SPRG`
 - **なぜそれか** — Verlet は少ない計算で安定し、長さを保つ (位置を直すだけ) のと相性がよい。VRM と同じ式にしたので、VRoid のモデルの揺れを作り直さずに使える
 - **どこ** — `plugins/rm_engine/animation3d/runtime/Spring.*`・`game_x_animation/runtime/AnimatorSprings.*`・`Animator.h` (`SpringBones`)・`space3d/runtime/Skeleton.h` (`SpringChainSetting`)・`Mesh.cpp` (`ReadSprings`)・`MeshBake.*` (`SPRG`)、`tests/TestAnimation3d.cpp`・`TestGameAnimation.cpp`・`TestGltfSkin.cpp`・`TestMeshBake.cpp`
+
+### 群れでよける・動かす人は 1 人だけ・パラメーターの送り手 (2026-11-27)
+
+- **何か** — **よける** (DetourCrowd の obstacle avoidance): まわりの動く者の位置と速さから、望む速さのまわりに速さの候補を同心円と放射状に並べて
+  (方向の数 x 輪の数。細かい所をもう一度細かく = adaptive)、それぞれ「何秒後にぶつかるか・望む速さからどれだけ離れるか・今の速さからどれだけ変わるか」の
+  重みの和が一番小さい物を選ぶ (速さの空間で探す: VO / RVO の考え)。離れる強さ (separation) で優先度の差を作る。**外から動かす** (キャラクター・ルートモーション):
+  通路 (`dtPathCorridor`) を保ったまま、今の位置だけをナビメッシュの面に沿って移す (`movePosition`)
+- **何に使っているか** — 部品「ナビの動く者」の「よける」「よける優先度」。口 `mover` に `order` (何人もが持ち主のとき小さい方が動かす: ルートモーション -10 →
+  キャラクター 0) と `turns` を足し、「動かす人は 1 人だけ」を口の形で守る。アニメーションへは口 `param_feed` (ゲーム制作 × アニメーション): つなぎが
+  「エンティティ → 数」の関数を名前つきで差し出し、アニメーターの「パラメーターの送り手」の行が、どの値をどのパラメーターに入れるかを持つ (送り手が無い
+  行は何もしない)。インスペクターの印は ComponentLook の `note` / `fixes` (部品のブロックの注記と「直す」の行) と、体の形を答える口 `body`
+- **なぜそれか** — 体の値を持つのは型だけ (憲法 2)。違いを見せて 1 回で合わせるほうが、2 か所に書いて同期するより壊れにくい。送り手を名前で持つと、
+  アニメーションはナビも物理も知らずに済み、物理の速さも同じ道で入れられる
+- **どこ** — `plugins/rm_engine/navigation/runtime/Crowd.*`・`game_x_navigation/runtime/NavWorld.*`・`NavPorts.h`・`editor/Connector.cpp` (印)・`editor/NavTab.cpp` (型の一覧)、
+  `game_x_animation/runtime/ParamFeed.h`・`AnimationSystem.cpp`、`navigation_x_animation/`、`navigation_x_physics/`、`game_production/editor/ComponentLook.h`、`tests/TestNavigation.cpp`
 
 ### 2D のタイルマップ: スプライトの束 (ID2D1SpriteBatch)・区画とランレングス・ブレゼンハムの線 (2026-11-27)
 

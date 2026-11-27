@@ -310,6 +310,9 @@
     <ClCompile Include="..\plugins\rm_engine\navigation_x_3d\runtime\Register.cpp">
       <ObjectFileName>$(IntDir)navigation_x_3d\</ObjectFileName>
     </ClCompile>
+    <ClCompile Include="..\plugins\rm_engine\navigation_x_animation\runtime\Register.cpp">
+      <ObjectFileName>$(IntDir)navigation_x_animation\</ObjectFileName>
+    </ClCompile>
     <ClCompile Include="..\plugins\rm_engine\navigation_x_physics\runtime\Register.cpp">
       <ObjectFileName>$(IntDir)navigation_x_physics\</ObjectFileName>
     </ClCompile>

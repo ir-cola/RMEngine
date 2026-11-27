@@ -9,6 +9,7 @@
 
 #include <algorithm>
 #include <charconv>
+#include <format>
 #include <cmath>
 #include <numbers>
 #include <unordered_set>
@@ -23,6 +24,7 @@ using game_production::SceneEntity;
 
 constexpr char kWorldKey[] = "rm_engine.game_x_navigation.world";
 constexpr float kMovedFar = 0.05f;  // これより Transform がずれていたら、ほかの誰かが動かした (置き直す)
+constexpr float kTeleport = 3.f;    // ほかの誰かが動かす物: これより離れたら跳んだ (置き直す。近ければ通路を保って移す)
 
 float Dist(Vec3 a, Vec3 b) {
     const float x = a.x - b.x, y = a.y - b.y, z = a.z - b.z;
@@ -195,6 +197,7 @@ void NavWorld::Step(game_production::SystemContext& ctx) {
     if (ctx.registry) {
         for (const auto& m : ctx.registry->Contributions<NavMoverInfo>(kNavMoverPoint)) movers.push_back(m.item);
     }
+    std::stable_sort(movers.begin(), movers.end(), [](const NavMoverInfo* x, const NavMoverInfo* y) { return x->order < y->order; });
 
     // 3: 動く者を群れに (今の位置・頼まれたこと・速さ)。
     std::unordered_set<int> seen;
@@ -207,30 +210,35 @@ void NavWorld::Step(game_production::SystemContext& ctx) {
         const auto w = worlds.find(id);
         const Vec3 at = w != worlds.end() ? Vec3{w->second.m[3][0], w->second.m[3][1], w->second.m[3][2]} : Vec3{};
         Agent& a = agents_[id];
-        if (!a.warnedMover) {
-            for (const NavMoverInfo* m : movers) {
-                if (m->owns && m->owns(scene, id)) {
-                    a.warnedMover = true;
-                    log::Warn("ナビ: 「{}」にはキャラクターがあります。今は Transform を直に動かします (キャラクターで歩くのは、これから: 段階 3)", e.data.name);
-                    break;
-                }
+        // 動かす人は 1 人だけ: order の小さい持ち主 (いなければナビが Transform を)。
+        a.mover = nullptr;
+        for (const NavMoverInfo* m : movers) {
+            if (m->owns && m->owns(scene, id)) {
+                a.mover = m;
+                break;
             }
         }
+        if (a.mover && a.mover != a.noted && a.mover->note) log::Info("ナビ: {}", std::vformat(a.mover->note, std::make_format_args(e.data.name)));
+        a.noted = a.mover;
         const NavAgentType* t = settings ? FindAgentType(*settings, c.agentType) : nullptr;
         navigation::AgentParams p;
         if (t) p.radius = t->radius, p.height = t->height;
         const float speed = a.speed >= 0 ? a.speed : c.speed;
         p.maxSpeed = std::max(0.f, std::isfinite(speed) ? speed : 0.f);
         p.maxAcceleration = std::max(0.f, std::isfinite(c.acceleration) ? c.acceleration : 0.f);
+        p.avoid = c.avoid == NavAvoid::Careful ? 2 : c.avoid == NavAvoid::Normal ? 1 : 0;
+        p.separation = 0.5f + 3.f * static_cast<float>(std::clamp(c.priority, 0, 99)) / 99.f;  // (大きいほど離れる = 道をゆずる)
         // 着く前にゆるめる: 止まれる距離 (v² / 2a) より近くなったら、残りに比べて速さを落とす。
         if (c.slowDown && a.hasTarget && !a.stopped && a.remaining > 0 && p.maxAcceleration > 0) {
             const float brake = std::max(p.maxSpeed * p.maxSpeed / (2.f * p.maxAcceleration), p.radius * 2.f);
             if (a.remaining < brake) p.maxSpeed *= std::max(0.15f, std::sqrt(a.remaining / brake));
         }
-        if (a.index < 0 || (a.mesh >= 0 && Dist(at, a.written) > kMovedFar)) {
+        if (a.index < 0 || (!a.mover && a.mesh >= 0 && Dist(at, a.written) > kMovedFar) || (a.mover && Dist(at, a.view.position) > kTeleport)) {
             Place(a, id, at, p, c, e.data.name);
         } else if (meshes_[static_cast<size_t>(a.mesh)].crowd) {
-            meshes_[static_cast<size_t>(a.mesh)].crowd->SetParams(a.index, p);
+            navigation::NavCrowd& cr = *meshes_[static_cast<size_t>(a.mesh)].crowd;
+            cr.SetParams(a.index, p);
+            if (a.mover) cr.MoveTo(a.index, at);  // (物理やクリップが動かした所へ。通路は保つ)
         }
         if (a.index < 0) return;
         navigation::NavCrowd& crowd = *meshes_[static_cast<size_t>(a.mesh)].crowd;
@@ -272,17 +280,22 @@ void NavWorld::Step(game_production::SystemContext& ctx) {
         if (!e) continue;
         const Component* comp = e->FindComponent(type);
         const NavAgent* c = comp && comp->Known() ? static_cast<const NavAgent*>(comp->value.Get()) : nullptr;
-        if (space3d::Transform* t = TransformOf(*e); t && a.view.onMesh) {
+        const Vec3 v = a.view.velocity;
+        if (a.mover && a.mover->move) a.mover->move(scene, id, {v.x, 0, v.z});  // (キャラクター: その速さで歩く。ルートモーション: 何もしない)
+        if (space3d::Transform* t = TransformOf(*e); t && a.view.onMesh && !(a.mover && a.mover->turns)) {
             const auto up = worlds.find(e->data.parent);
             const space3d::Mat4 parent = up != worlds.end() ? up->second : space3d::Mat4{};
             const auto self = worlds.find(id);
             space3d::WorldPlacement want = space3d::Decompose(self != worlds.end() ? self->second : space3d::Mat4{}, t->rotation);
-            want.position = a.view.position;
-            const Vec3 v = a.view.velocity;
+            if (!a.mover) want.position = a.view.position;  // (ほかの誰かが動かす物は、向きだけ)
             if (c && c->turnSpeed > 0 && v.x * v.x + v.z * v.z > 0.0025f) want.rotation.y = TurnToward(want.rotation.y, v, c->turnSpeed * ctx.dt);
             *t = space3d::FromWorld(*t, parent, want);
-            a.written = a.view.position;
+            if (!a.mover) a.written = a.view.position;
             worlds[id] = space3d::WorldMatrix(parent, *t);
+        }
+        if (const auto self = worlds.find(id); self != worlds.end()) {
+            const space3d::Mat4& m = self->second;
+            a.yaw = std::atan2(m.m[2][0], m.m[2][2]) * 180.f / std::numbers::pi_v<float>;  // (+Z 軸の向き)
         }
         // 5: 着いた (残りが止まる距離より短い)。
         const float stop = c ? std::max(c->stoppingDistance, 0.01f) : 0.1f;

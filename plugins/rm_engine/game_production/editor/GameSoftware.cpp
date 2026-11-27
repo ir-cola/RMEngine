@@ -2341,6 +2341,16 @@ private:
                     if (const ComponentLook* info = LookOf(c.type); info && info->choices && !b.onEdit) {
                         b.choices = [this, id, info](const reflect::FieldPath& path) { return info->choices(host_, Shown(), id, path); };
                     }
+                    if (const ComponentLook* info = LookOf(c.type); info && info->note) {
+                        if (const std::wstring extra = info->note(host_, Shown(), id); !extra.empty()) b.note = b.note.empty() ? extra : b.note + L" ・ " + extra;
+                    }
+                    if (const ComponentLook* info = LookOf(c.type); info && info->fixes && !play) {
+                        ComponentFixHost fh;
+                        fh.host = &host_;
+                        fh.edit = [this](std::string label, std::function<void(Scene&)> change) { Edit(std::move(label), [&] { change(scene_); }); };
+                        b.presets = info->fixes(fh, Shown(), id);
+                        if (!b.presets.empty()) b.presetLabel = info->fixLabel ? info->fixLabel() : std::wstring();
+                    }
                     if (const ComponentLook* info = LookOf(c.type); info && info->adjust && !b.onEdit) {
                         b.onEdit = [this, id, type, nth, info, play](editor::InspectBlock::Change ch) {
                             EditAdjusted(id, type, nth, info, std::move(ch), play);

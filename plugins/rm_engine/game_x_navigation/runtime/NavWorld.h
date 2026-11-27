@@ -8,14 +8,16 @@
 //     2 エリアの費用と通れないエリア (シーンの設定 + スクリプトが変えた物)
 //     3 部品「ナビの動く者」: 今の位置を Transform から読む (スクリプトや物理が動かした分: 動いていたら置き直す)・
 //       頼まれた行き先・速さ
-//     4 群れを進める (道を探す: 分けて探す・角へ向かう・面の上を進む) → Transform に書く (向きも回す)
+//     4 群れを進める (道を探す: 分けて探す・角へ向かう・面の上を進む・よける) → 動かす: 口 mover の持ち主がいれば
+//       その道で (ルートモーション: 位置も向きも書かない / キャラクター: 速さを渡し、向きだけ回す)。いなければ Transform に書く
 //     5 着いた (残りが「止まる距離」より短い) → 止まって、スクリプトへイベント NavArrived
 //
-// 段階 2 は Transform を直に動かす。物理の「キャラクター」(口 mover の持ち主) がある物は、1 回だけ知らせて Transform を動かす
-// (キャラクターで歩くのは段階 3)。純粋 (描画もファイルの書き込みもない)。tests/TestNavigation.cpp でテストする。
+// 動かす人は 1 人だけ (口 mover の order の小さい持ち主。いなければナビが Transform を)。ほかの誰かが動かす物は、毎刻み
+// その位置へ群れの者を移す (通路は保つ)。純粋 (描画もファイルの書き込みもない)。tests/TestNavigation.cpp でテストする。
 
 #include "rm_engine/game_production/runtime/Systems.h"
 #include "rm_engine/game_x_navigation/runtime/Components.h"
+#include "rm_engine/game_x_navigation/runtime/NavPorts.h"
 #include "rm_engine/navigation/runtime/Crowd.h"
 
 #include <map>
@@ -49,7 +51,10 @@ public:
         Vec3 written{0, 0, 0};      // 前の刻みに Transform に書いた位置 (ワールド)
         navigation::AgentView view;
         float remaining = 0;
-        bool warnedOff = false, warnedMover = false;
+        bool warnedOff = false;
+        const NavMoverInfo* mover = nullptr;  // 動かす道 (null: ナビが Transform を)
+        const NavMoverInfo* noted = nullptr;  // 知らせた道
+        float yaw = 0;                               // 体の向き (ワールドの Y の角度。度。+Z が 0)
     };
 
     // システム「ナビ」の 1 刻み。

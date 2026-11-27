@@ -3,7 +3,10 @@
 //
 //   rm_engine.game_x_navigation.source  焼く物を差し出す (ナビ × 3D: メッシュ・ナビ × 物理: 動かないコライダー・
 //                                       あとで 地形 × ナビ / タイルマップ × ナビ)
-//   rm_engine.game_x_navigation.mover   動く者を動かす道を差し出す (ナビ × 物理: キャラクターの PhysicsWorld::Move)
+//   rm_engine.game_x_navigation.mover   動く者を動かす道を差し出す (ナビ × 物理: キャラクターの PhysicsWorld::Move・
+//                                       ナビ × アニメーション: ルートモーションで動く物は、ナビが位置を書かない)
+//   rm_engine.game_x_navigation.body    体の形を持つ物 (ナビ × 物理: キャラクターの半径・高さ・坂・段差)。型と違えば
+//                                       インスペクターに印と「キャラクターに合わせる」(憲法 2: 値を持つのは型だけ)
 //   (rm_engine.game_x_navigation.grid   マス目のゲームの「このマスは通れるか・費用は」: 段階 5。名前だけ決めてある)
 //
 //   // つなぎのランタイムの部分 (runtime/Register.cpp) で:
@@ -63,6 +66,22 @@ inline constexpr char kNavMoverPoint[] = "rm_engine.game_x_navigation.mover";
 struct NavMoverInfo {
     bool (*owns)(game_production::Scene& scene, int entity) = nullptr;                 // この物はこの道で動かす
     void (*move)(game_production::Scene& scene, int entity, Vec3 velocity) = nullptr;  // 望む速さ (横だけ。次の指示まで)
+    // 何人もが持ち主と言うときは、小さいほうが動かす (ルートモーション -10 → キャラクター 0)。
+    int order = 0;
+    // 向きもこの道が回す (ルートモーション)。false: ナビが Transform の Y を回す (キャラクターは回転を持たない)。
+    bool turns = false;
+    // 初めてこの道で動かすときにコンソールへ 1 回 (UTF-8・日本語。{} はエンティティの名前)。null: 何も言わない。
+    const char* note = nullptr;
+};
+
+// 体の形 (半径・高さ・登れる坂・登れる段差。長さは m、坂は度)。
+struct NavBody {
+    float radius = 0, height = 0, maxSlope = 0, stepHeight = 0;
+};
+inline constexpr char kNavBodyPoint[] = "rm_engine.game_x_navigation.body";
+struct NavBodyInfo {
+    const char* name = "";  // 体の持ち主の部品の名前 (UTF-8・日本語: "キャラクター")
+    bool (*bodyOf)(const game_production::Scene& scene, int entity, NavBody& out) = nullptr;  // false: 持たない
 };
 
 }  // namespace rm::game_x_navigation

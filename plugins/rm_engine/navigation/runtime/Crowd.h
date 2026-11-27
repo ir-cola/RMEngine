@@ -3,7 +3,8 @@
 //
 // 1 刻みごとに (Update): 行き先が変わった・通路がふさがれた → 道を探す (分けて探す: 1 刻みに調べる数に上限) →
 // 通路の先の角へ向かう「望む速さ」(着く前にゆるめる) → 加速の上限で今の速さを変える → ナビメッシュの面の上を進める
-// (壁を抜けない)。段階 2 は「よける」を切ってある (段階 3 で入れる: AgentParams::avoid)。重なりだけは押し離す。
+// (壁を抜けない)。よける (AgentParams::avoid): まわりの動く者を見て、望む速さの近くの速さをいくつも試し、ぶつかりにくい物を
+// 選ぶ (DetourCrowd の速さの候補を試すやり方。RVO = お互いが半分ずつよける考えに近い)。重なりは押し離す。
 //
 // 1 つの群れは 1 つのナビメッシュ (NavMesh) の上。NavMesh はこの群れより長く生きること。1 つのスレッドから使う。
 // 純粋 (ファイルも描画もない)。tests/TestNavigation.cpp でテストする。
@@ -20,7 +21,8 @@ struct AgentParams {
     float height = 1.8f;
     float maxSpeed = 3.5f;         // m/s
     float maxAcceleration = 8.f;   // m/s²
-    bool avoid = false;            // よける (段階 3)
+    int avoid = 0;                 // よける: 0 しない / 1 ふつう / 2 ていねい (試す速さの候補が多い)
+    float separation = 1.f;        // 離れる強さ (0 .. 4。大きいほど道をゆずる)
 };
 
 struct AgentView {
@@ -53,6 +55,8 @@ public:
     // 行き先 (ナビメッシュの上の一番近い点へ)。false: 近くにナビメッシュが無い。
     bool SetTarget(int agent, Vec3 target);
     void ClearTarget(int agent);  // 止まる (その場で)
+    // ほかの誰か (物理のキャラクター・ルートモーション) が動かした所へ、通路を保ったまま移す。
+    void MoveTo(int agent, Vec3 position);
 
     void Update(float dt);
 

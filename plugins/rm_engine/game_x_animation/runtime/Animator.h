@@ -12,6 +12,7 @@
 // (AnimatorRun.h)。スクリプトからは RMAnim.h の rm::Animator で動かす。
 
 #include "core/reflect/Reflect.h"
+#include "rm_engine/game_x_animation/runtime/ParamFeed.h"
 
 #include <memory>
 #include <string>
@@ -40,6 +41,8 @@ struct Animator {
     bool playOnStart = true;
     RM_PROPERTY(Edit, Label="ルートモーション", Tooltip="クリップの根の骨の動き (モデルのインスペクターの「クリップとイベント」で、クリップごとに「使う」を入れたもの) をどうするか。動かす: エンティティが動きます (物理のキャラクターがあれば、その速さになります。動かすクリップに重みがある間は、スクリプトの Character::Move より強い)。その場で: 動きを捨てます。スクリプトに渡す: 動かさず、スクリプトの RootDelta / RootTurn で読めます")
     RootMotionUse rootMotion = RootMotionUse::Move;
+    RM_PROPERTY(Edit, Label="パラメーターの送り手", Tooltip="毎フレーム、状態とルールのパラメーターに値を入れます (ナビの動く者の速さなど: ParamFeed.h)。スクリプトの SetFloat より先に入るので、同じ名前はスクリプトが上書きします")
+    std::vector<ParamFeed> feeds;
     // ゲームが動いている間の再生 (システム「アニメーション」が作る。Play するコピーだけが持つ)。
     RM_TRANSIENT() std::shared_ptr<AnimatorRun> run;
 };

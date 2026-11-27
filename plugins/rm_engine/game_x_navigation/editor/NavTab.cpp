@@ -504,6 +504,7 @@ private:
             }
             if (best) {
                 state_.volume = best;
+                state_.type = 0;
                 lastSelection_ = {best};
                 ClearRoute();
                 if (host.select) host.select({best});
@@ -651,6 +652,8 @@ private:
         }
         if (host.playing && r.Bottom() - y >= 60) y = DrawAgentList(c, {r.x, y, r.w, r.Bottom() - y}, host);
         if (r.Bottom() - y < 60) return;
+        y = DrawTypeList(c, {r.x, y, r.w, r.Bottom() - y}, host, settings);
+        if (r.Bottom() - y < 60) return;
         y = DrawAreaList(c, {r.x, y, r.w, r.Bottom() - y}, host, settings);
         if (r.Bottom() - y < 40) return;
 
@@ -677,7 +680,9 @@ private:
             };
             blocks.push_back(std::move(b));
         }
-        const NavAgentType* type = vol ? FindAgentType(settings, vol->volume.agentType) : (settings.agentTypes.empty() ? nullptr : &settings.agentTypes.front());
+        const NavAgentType* type = state_.type != 0 ? FindAgentType(settings, std::to_string(state_.type))
+                                   : vol         ? FindAgentType(settings, vol->volume.agentType)
+                                                 : (settings.agentTypes.empty() ? nullptr : &settings.agentTypes.front());
         if (type) {
             typeCopy_ = *type;
             inspector::Block b;
@@ -798,6 +803,49 @@ private:
             y += 22;
         }
         return y + 6;
+    }
+
+    // エージェントの型の一覧と ＋ / 消す (範囲は型を 1 つ選んで焼く。別の型は範囲をもう 1 つ)。下の y を返す。
+    float DrawTypeList(ui::Context& c, const Rect& r, SceneViewHost& host, const NavSettings& settings) {
+        const bool canEdit = CanEdit(host);
+        float y = r.y;
+        Label(c, {r.x, y, r.w - 150, kRow}, Tr(L"エージェントの型"), true);
+        if (w::Button(c, "nav.type.add", {r.Right() - 144, y, 76, kRow}, Tr(L"＋ 足す"), w::ButtonKind::Secondary, canEdit)) {
+            NavAgentType t = settings.agentTypes.empty() ? NavAgentType{} : settings.agentTypes.back();
+            t.id = NewAgentTypeId(settings);
+            t.name = TrU8("新しい型");
+            const int id = t.id;
+            if (EditSettings(host, "エージェントの型を足す", 0, [&t](NavSettings& s) { s.agentTypes.push_back(t); })) state_.type = id;
+        }
+        const NavAgentType* chosen = state_.type != 0 ? FindAgentType(settings, std::to_string(state_.type)) : nullptr;
+        if (w::Button(c, "nav.type.remove", {r.Right() - 64, y, 64, kRow}, Tr(L"消す"), w::ButtonKind::Secondary,
+                      canEdit && chosen && settings.agentTypes.size() > 1)) {
+            const int id = chosen->id;
+            EditSettings(host, std::format("エージェントの型「{}」を消す", chosen->name), 0,
+                         [id](NavSettings& s) { std::erase_if(s.agentTypes, [id](const NavAgentType& t) { return t.id == id; }); });
+            state_.type = 0;
+        }
+        y += kRow + 4;
+        const float rowH = kRow + 2;
+        const float content = rowH * static_cast<float>(settings.agentTypes.size());
+        const Rect list{r.x, y, r.w, std::min(content, std::max(rowH * 2, (r.Bottom() - y) * 0.2f))};
+        const float scroll = w::BeginScroll(c, "nav.types", list, content);
+        ui::TextStyle ts;
+        ts.color = theme::Text;
+        ui::TextStyle dim;
+        dim.color = theme::TextDim;
+        dim.h = ui::HAlign::Right;
+        const NavVolume* vol = FindVol(state_.volume);
+        const NavAgentType* shown = chosen ? chosen : vol ? FindAgentType(settings, vol->volume.agentType) : nullptr;
+        for (size_t i = 0; i < settings.agentTypes.size(); ++i) {
+            const NavAgentType& t = settings.agentTypes[i];
+            const Rect row{list.x, list.y - scroll + rowH * static_cast<float>(i), list.w, kRow};
+            if (w::Selectable(c, std::format("nav.t{}", t.id), row, shown && shown->id == t.id).clicked) state_.type = t.id;
+            c.P().Text({row.x + 8, row.y, row.w * 0.45f, row.h}, Utf8ToWide(TrU8(t.name)), ts);
+            c.P().Text({row.x + row.w * 0.45f, row.y, row.w * 0.55f - 8, row.h}, TrF(L"半径 {:.2f} ・ 高さ {:.2f}", t.radius, t.height), dim);
+        }
+        w::EndScroll(c, "nav.types", list, content);
+        return list.Bottom() + 10;
     }
 
     // エリアの種類の一覧と ＋ / 消す。下の y を返す。

@@ -475,11 +475,15 @@ if ($p.ExitCode -ne 0 -or -not (Test-Path $rmpf)) {
         Write-Host "NG  game_tilemap: 書き出せませんでした (終了コード $($p.ExitCode))。$log を見てください"
         $failed++
     } else {
-        $r = Start-Process -FilePath $exe[0].FullName -ArgumentList '--smoke' -Wait -PassThru
-        $gameLog = [IO.File]::ReadAllText((Join-Path $game 'game.log'), $utf8)
+        # 当たりは物理の固定の刻みで作る: --smoke の 5 フレームが速すぎると 1 度も刻まないことがあるので、5 回まで走らせる。
+        for ($try = 1; $try -le 5; $try++) {
+            $r = Start-Process -FilePath $exe[0].FullName -ArgumentList '--smoke' -Wait -PassThru
+            $gameLog = [IO.File]::ReadAllText((Join-Path $game 'game.log'), $utf8)
+            $collided = $gameLog -match '物理: ほかのプラグインの動かない形を 2 個作りました'
+            if ($r.ExitCode -ne 0 -or $collided) { break }
+        }
         $readSet = $gameLog -match "タイルの層: タイルセット \($setGuid\) を読みました \(絵の元 1 枚\)"
         $readImage = $gameLog -match "画像を読みました: $imageGuid \(64 x 48・くっきり"
-        $collided = $gameLog -match '物理: ほかのプラグインの動かない形を 2 個作りました'
         if ($r.ExitCode -ne 0 -or -not $readSet -or -not $readImage -or -not $collided) {
             Write-Host "NG  game_tilemap: タイルの層のタイルセット・画像・当たりを読めていません (終了コード $($r.ExitCode)・タイルセット $readSet・画像 $readImage・当たり $collided)"
             $gameLog -split "`n" | Select-Object -Last 10 | ForEach-Object { Write-Host "    $_" }
