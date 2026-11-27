@@ -83,6 +83,9 @@ struct ExportAsset {
     // このゲームに入るアセット全部の id -> ファイル (CollectAssets が作る。ほかのアセットを名指すアセット -
     // マテリアルの絵 - を焼くときに引く。ワーカーのスレッドでも読める写し)。
     std::shared_ptr<const std::map<std::string, std::filesystem::path>> files;
+    // このゲームに入る文書の中身: シーン・エンジンの JSON のアセット (.rm… : Prefab・状態とルール …)・スクリプトのソース
+    // (Assets/Scripts の .h / .cpp)。ほかのアセットの中の物を名前で指していないかを見るのに (3D モデル: 使っているクリップだけ焼く)。
+    std::shared_ptr<const std::vector<std::string>> documents;
 };
 enum class BakeResult { NotMine, Done, Failed };
 struct ExportBaked {

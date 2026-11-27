@@ -37,4 +37,12 @@ float ClampEventTime(float time, float duration);
 // 書いた順)。オブジェクトでないもの・名前が空のものは捨てる。名前の同じクリップが 2 つあれば両方に。
 void ApplyClipSettings(std::vector<Clip>& clips, const json::Value& import);
 
+// 書き出すゲームに入れるクリップ (docs/ANIMATION.md 7-3: 使っているクリップだけ焼く)。入れるのは:
+//   - 最初のクリップ (アニメーターの「クリップ」の欄が空のときに流れる)
+//   - 「いつも入れる」(bake.always) のもの
+//   - `documents` (ゲームに入るシーン・プレハブ・状態とルールなどの JSON と、スクリプトのソース) のどれかに名前が出るもの:
+//     JSON は文字列の値のどれかがその名前 (エスケープを解いて比べる)、JSON でない物 (スクリプト) は "名前" と書いてあるもの
+// 多めに残ることはあっても (同じ文字の別の物)、アニメーター・状態・スクリプトが名前で指すクリップは落とさない。
+std::vector<bool> UsedClips(const std::vector<Clip>& clips, const std::vector<std::string>& documents);
+
 }  // namespace rm::space3d

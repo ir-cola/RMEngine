@@ -144,7 +144,13 @@ public:
                                if (!bytes) host_.Log(1, err);
                                return bytes;
                            },
-                           nullptr});
+                           nullptr,
+                           [this](std::string_view path) -> std::optional<std::string> {
+                               std::string err;
+                               auto bytes = host_.Read(std::string(path), &err);
+                               if (!bytes) host_.Log(1, err);
+                               return bytes;
+                           }});
         runner_.SetCamera(SceneCamera(scene_, cameraTypes_, settings_.startCamera.id));
         const GameDrawInfo* chosen = nullptr;
         for (const auto& d : host_.Registry().Contributions<GameDrawInfo>(kGameDrawPoint)) {

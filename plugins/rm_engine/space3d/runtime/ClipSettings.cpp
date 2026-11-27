@@ -4,6 +4,8 @@
 
 #include <algorithm>
 #include <cmath>
+#include <functional>
+#include <unordered_set>
 
 namespace rm::space3d {
 
@@ -42,6 +44,38 @@ void ApplyClipSettings(std::vector<Clip>& clips, const json::Value& import) {
         }
         std::stable_sort(clip.events.begin(), clip.events.end(), [](const ClipEvent& a, const ClipEvent& b) { return a.time < b.time; });
     }
+}
+
+std::vector<bool> UsedClips(const std::vector<Clip>& clips, const std::vector<std::string>& documents) {
+    std::vector<bool> used(clips.size(), false);
+    if (clips.empty()) return used;
+    // JSON の文字列の値 (キーは除く) を全部。
+    std::unordered_set<std::string> strings;
+    std::function<void(const json::Value&)> walk = [&](const json::Value& v) {
+        if (v.IsString()) {
+            strings.insert(v.AsString());
+        } else if (v.IsArray()) {
+            for (const json::Value& x : v.Items()) walk(x);
+        } else if (v.IsObject()) {
+            for (const auto& [key, x] : v.Members()) walk(x);
+        }
+    };
+    std::vector<const std::string*> texts;  // JSON でない文書 (スクリプトのソース)
+    for (const std::string& d : documents) {
+        if (auto doc = json::Parse(d)) {
+            walk(*doc);
+        } else {
+            texts.push_back(&d);
+        }
+    }
+    for (size_t i = 0; i < clips.size(); ++i) {
+        const Clip& c = clips[i];
+        bool keep = i == 0 || c.bake.always || strings.contains(c.name);
+        const std::string quoted = "\"" + c.name + "\"";
+        for (size_t k = 0; !keep && k < texts.size(); ++k) keep = texts[k]->find(quoted) != std::string::npos;
+        used[i] = keep;
+    }
+    return used;
 }
 
 }  // namespace rm::space3d

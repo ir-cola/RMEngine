@@ -41,6 +41,8 @@ struct AssetAccess {
     std::function<std::optional<std::string>(const AssetRef&)> bytes;
     // ディスク上のファイル (エディター: プロジェクトの Assets/...)。空: なし。
     std::function<std::filesystem::path(const AssetRef&)> file;
+    // 書き出したゲームの中のパスのバイト列 (アセットの焼いた物が名指す別のファイル: "Baked/<id>/clip0.rmclip")。nullopt: なし。
+    std::function<std::optional<std::string>(std::string_view path)> path;
 };
 
 // システムが頼むスクリプトのフック (物理の接触 ...): フレームの固定の刻みの後に、`entity` の始まった

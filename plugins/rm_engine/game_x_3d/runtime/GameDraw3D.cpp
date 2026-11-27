@@ -240,6 +240,10 @@ private:
             log::Warn("モデルを読めないので箱で描きます ({}): {}", ref.guid, bytes ? err : std::string("ゲームに入っていません"));
             return nullptr;
         }
+        // クリップは別のファイル (.rmclip。使っているものだけが焼いてある)。
+        for (const std::string& problem : space3d::LoadClipFiles(*mesh, [&f](std::string_view path) { return f.file(std::string(path)); })) {
+            log::Warn("モデル {} の{}", ref.guid, problem);
+        }
         Model& m = it->second;
         UseSlotZeroForBareModel(*mesh);  // (材質の無いモデルにも、メッシュの 0 番のマテリアルが入る)
         m.gpu = renderer_.Upload(*mesh, &err);

@@ -38,11 +38,18 @@
 // このバージョンが知らないタグのチャンクは飛ばす (キーの扱い。バイナリデータについての設計の決まりと同じ)。
 // 形式の番号は、古いゲームが骨のチャンクを黙って飛ばして休みの姿勢で描かないように上げた (形式 1 も読める)。
 // 形式 3 も同じ: 古いゲームが ROOT を飛ばして、根を動かしたまま描かないように (形式 1・2 も読める)。
+// 形式 4 (段階 7。docs/ANIMATION.md 7-3):
+//   CPAK  圧縮したクリップ (ClipPack.h。ANIM の後): count u32 (= クリップの数)、続いてクリップごとに 数 u32 (0: 圧縮していない・
+//         でなければトラックの数)、トラックごとに位置・回転・大きさの列: kind u8 (0 無し・1 同じ値 (float 4)・2 16 ビットの鍵・
+//         3 float の鍵)。鍵の列は 数 u32 + 刻み u16 ずつ、続いて 2: lo・step (float 3 ずつ) + u16 x 3 ずつ / 3: float x 3 (回転は 4) ずつ
+//   CLPF  別のファイルに焼いたクリップ: count u32、続いて name・path (ゲームの中のパス)。このときモデルには ANIM が無い
+// クリップのファイル (.rmclip): "RMCLIP\0\0"  format u32 (kBakedClipFormat)、その後に 1 つのクリップの ANIM (・EVNT・MANI・CPAK・ROOT)。
 
 #include "rm_engine/space3d/runtime/Mesh.h"
 #include "rm_engine/space3d/runtime/TextureSampling.h"
 
 #include <array>
+#include <functional>
 #include <optional>
 #include <string>
 #include <string_view>
@@ -50,7 +57,9 @@
 
 namespace rm::space3d {
 
-inline constexpr uint32_t kBakedMeshFormat = 3;  // 2: 骨 (SKEL SKIN IBND BBOX) とクリップ (ANIM)。3: ルートモーション (ROOT)
+// 2: 骨 (SKEL SKIN IBND BBOX) とクリップ (ANIM)。3: ルートモーション (ROOT)。4: 圧縮したクリップ (CPAK)・クリップは .rmclip (CLPF)
+inline constexpr uint32_t kBakedMeshFormat = 4;
+inline constexpr uint32_t kBakedClipFormat = 1;
 
 // マテリアルの 4 枚の絵 (Texture.h のスロット: 色、金属 / ラフネス、法線、発光) をパスで、と、
 // それぞれの読み方 (その取り込みの設定: フィルタ・端の扱い・ストリーミング - 各 1 バイト、PackSampling)。
@@ -66,5 +75,13 @@ std::string WriteBakedMesh(const MeshData& mesh, const std::vector<BakedPictures
 // `samplingOfImage` (省略可) には、画像ごとの読み方が入る。焼いたメッシュでない、新しい形式、
 // または壊れているときは nullopt と *error (日本語)。
 std::optional<MeshData> ReadBakedMesh(std::string_view bytes, std::string* error, std::vector<TextureSampling>* samplingOfImage = nullptr);
+
+// クリップ 1 つを .rmclip に (書き出し)。
+std::string WriteBakedClip(const Clip& clip);
+// .rmclip を読む。クリップのファイルでない・新しい形式・壊れている・クリップが 1 つでない: nullopt と *error。
+std::optional<Clip> ReadBakedClip(std::string_view bytes, std::string* error);
+// `mesh.clipFiles` のクリップを `read` (ゲームの中のパス -> バイト列) で読んで、並びの順に `mesh.clips` に足す。読めない
+// ファイルは飛ばして、その理由を返す (空: 全部読めた)。読み終えたら clipFiles は空。
+std::vector<std::string> LoadClipFiles(MeshData& mesh, const std::function<std::optional<std::string>(std::string_view path)>& read);
 
 }  // namespace rm::space3d

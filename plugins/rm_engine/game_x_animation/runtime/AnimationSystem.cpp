@@ -51,6 +51,10 @@ game_x_3d::SkinnedModel LoadSkinned(const game_production::AssetAccess* assets, 
     }
     if (!mesh && assets && assets->bytes) {
         if (const auto bytes = assets->bytes(model)) mesh = space3d::ReadBakedMesh(*bytes, err);
+        // クリップは別のファイル (.rmclip)。読めない物はログに出して、ほかのクリップで動かす。
+        if (mesh) {
+            for (const std::string& problem : space3d::LoadClipFiles(*mesh, assets->path)) log::Warn("モデル {} の{}", model.guid, problem);
+        }
     }
     if (!mesh) return {};
     game_x_3d::SkinnedModel skinned = game_x_3d::TakeSkinned(*mesh);

@@ -290,3 +290,72 @@ RM_TEST(ClipPack_PoseFromPackedClip) {
         }
     }
 }
+
+// クリップのファイル (.rmclip): 1 つのクリップを書いて同じに読み戻す (圧縮したもの・イベント・ルートモーションも)・
+// モデルの一覧 (CLPF) から読む・壊れた物と無い物は飛ばして理由を返す。
+RM_TEST(ClipPack_ClipFilesRoundTrip) {
+    const Skeleton body = Body();
+    Clip walk = Moves(body);
+    PackClip(walk, body, 0.001f);
+    walk.events = {{0.5f, "Step", 1, "左"}};
+    walk.root.enabled = true;
+    Clip idle = Moves(body);
+    idle.name = "待つ";
+    const std::string a = WriteBakedClip(walk), b = WriteBakedClip(idle);
+    std::string err;
+    const auto back = ReadBakedClip(a, &err);
+    CHECK(back.has_value());
+    if (!back) return;
+    CHECK(back->name == "歩く" && back->packed.size() == walk.packed.size() && back->events.size() == 1 && back->root.enabled);
+    CHECK(WriteBakedClip(*back) == a);
+    // 壊れた物・違う物。
+    CHECK(!ReadBakedClip("RMCLIP", &err) && !err.empty());
+    CHECK(!ReadBakedClip(std::string_view(a).substr(0, a.size() - 7), &err));
+    std::string newer = a;
+    newer[8] = 9;
+    CHECK(!ReadBakedClip(newer, &err) && err.find("新しい") != std::string::npos);
+    MeshData mesh;
+    CHECK(!ReadBakedClip(WriteBakedMesh(mesh, {}), &err));
+    // モデルの一覧から読む (並びの順。無い・壊れた物は飛ばす)。一覧は焼いたモデルに入って戻る。
+    mesh.vertices = {{{0, 0, 0}, {0, 1, 0}, {0, 0}}, {{1, 0, 0}, {0, 1, 0}, {1, 0}}, {{0, 1, 0}, {0, 1, 0}, {0, 1}}};
+    mesh.indices = {0, 1, 2};
+    mesh.parts = {{0, 3, -1}};
+    mesh.clipFiles = {{"歩く", "Baked/m/clip0.rmclip"}, {"待つ", "Baked/m/clip1.rmclip"}, {"無い", "Baked/m/clip2.rmclip"}, {"壊れた", "Baked/m/clip3.rmclip"}};
+    const auto baked = ReadBakedMesh(WriteBakedMesh(mesh, {}), &err);
+    CHECK(baked && baked->clipFiles.size() == 4 && baked->clipFiles[1].name == "待つ" && baked->clips.empty());
+    if (!baked) return;
+    MeshData loaded = *baked;
+    const std::vector<std::string> problems = LoadClipFiles(loaded, [&](std::string_view path) -> std::optional<std::string> {
+        if (path == "Baked/m/clip0.rmclip") return a;
+        if (path == "Baked/m/clip1.rmclip") return b;
+        if (path == "Baked/m/clip3.rmclip") return a.substr(0, 20);
+        return std::nullopt;
+    });
+    CHECK(loaded.clips.size() == 2 && loaded.clips[0].name == "歩く" && loaded.clips[1].name == "待つ" && loaded.clipFiles.empty());
+    CHECK(problems.size() == 2);
+}
+
+// 書き出すクリップ: 最初のもの・いつも入れる・シーン / 状態とルールの文字列の値・スクリプトに "名前" と書いたもの。
+RM_TEST(ClipPack_UsedClipsOnly) {
+    std::vector<Clip> clips(6);
+    const char* names[] = {"Idle", "Walk", "Run", "Jump", "歩く2", "Dance"};
+    for (size_t i = 0; i < clips.size(); ++i) clips[i].name = names[i];
+    clips[5].bake.always = true;
+    const std::vector<std::string> docs = {
+        R"({"entities": [{"components": [{"type": "rm::game_x_animation::Animator", "data": {"clip": "Walk"}}]}]})",
+        R"({"kind": "rm.animator", "states": [{"name": "走る", "clip": "Run"}], "layers": [{"states": [{"motions": [{"clip": "\u6b69\u304f2"}]}]}]})",
+        "void Update() { anim.PlayClip(\"Jump\", 0.2f); }  // Dance (書いてあるだけ: 引用符が無い)",
+        "{ broken json \"Idle2\" ",
+    };
+    const std::vector<bool> used = UsedClips(clips, docs);
+    CHECK(used.size() == 6);
+    CHECK(used[0] && used[1] && used[2] && used[3] && used[4] && used[5]);
+    // どこにも名前が無い物は入れない (キーの名前・引用符の無い文字は数えない)。
+    clips[5].bake.always = false;
+    clips.push_back({});
+    clips.back().name = "clip";
+    const std::vector<bool> again = UsedClips(clips, docs);
+    CHECK(!again[5] && !again[6]);
+    CHECK(UsedClips({}, docs).empty());
+    CHECK(UsedClips(clips, {})[0] && !UsedClips(clips, {})[1]);
+}

@@ -342,7 +342,7 @@ RM_TEST(MeshBake_RootMotionRoundTrip) {
     CHECK(bytes.find("ROOT") != std::string::npos);
     uint32_t format = 0;
     std::memcpy(&format, bytes.data() + 8, 4);
-    CHECK(format == 3 && kBakedMeshFormat == 3);
+    CHECK(format == kBakedMeshFormat && kBakedMeshFormat >= 3);  // (4: 段階 7 の CPAK・CLPF)
     std::string err;
     const auto back = ReadBakedMesh(bytes, &err);
     CHECK(back && back->clips.size() == 2);

@@ -101,6 +101,12 @@ struct MeshPart {
     bool operator==(const MeshPart&) const = default;
 };
 
+// 焼いたモデルの、別のファイル (.rmclip) に焼いたクリップ 1 つ (MeshBake.h の CLPF・LoadClipFiles)。
+struct BakedClipFile {
+    std::string name;  // クリップの名前
+    std::string path;  // 書き出したゲームの中のパス ("Baked/<id>/0.rmclip")
+};
+
 struct MeshData {
     std::vector<MeshVertex> vertices;
     std::vector<uint32_t> indices;  // 三角形 1 つにつき 3 個。表は反時計回り
@@ -112,6 +118,8 @@ struct MeshData {
     // 骨のあるモデル (Skeleton.h): 頂点を骨で動かす。あるとき、頂点はバインドしたときの形 (モデルの空間)。
     std::optional<SkinData> skin;
     std::vector<Clip> clips;  // ファイルのアニメーション (glTF の animations・FBX のテイク)。骨は名前で指す
+    // 焼いたモデルだけ: クリップは別のファイル (.rmclip)。読むのは LoadClipFiles (MeshBake.h) で、読むと clips に入る。
+    std::vector<BakedClipFile> clipFiles;
     // ブレンドシェイプ (Morph.h。表情)。名前の同じ形は 1 つ。morphDefaults: 形ごとの初めの重み (glTF の mesh.weights)。
     std::vector<MorphTarget> morphs;
     std::vector<float> morphDefaults;

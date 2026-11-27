@@ -1,7 +1,8 @@
 // 書き出すゲームの焼き込み (game_production/editor/GameExport.h: ExportBaker)。コードが 3D 空間の
 // ものなので 3D コネクターにある:
-//   3D モデル  エディターと同じように読み (LoadMeshFile: 取り込みの設定の大きさと上の軸)、
-//              このエンジンの形で書く (MeshBake: Baked/<id>.rmmesh)。材質の各画像は GPU が
+//   3D モデル  エディターと同じように読み (LoadMeshFile: 取り込みの設定の大きさと上の軸・クリップの圧縮)、
+//              このエンジンの形で書く (MeshBake: Baked/<id>.rmmesh)。クリップは使っているものだけを 1 つずつ
+//              Baked/<id>/clip<n>.rmclip に (UsedClips: アニメーター・状態とルール・スクリプトが名前で指すもの)。材質の各画像は GPU が
 //              読める形にする (Baked/<id>/<n>.dds) - テクスチャキャッシュの DDS があればそれ、
 //              なければ同じコード (PictureDecoder) で作り、キャッシュにも残す
 //   マテリアル (.rmmat) そのファイルに、各スロットの絵を同じように DDS にしたもの (Baked/<id>/<スロット>.dds)
@@ -17,6 +18,7 @@
 #include "platform/Shell.h"
 #include "rm_engine/game_production/editor/GameExport.h"
 #include "rm_engine/game_x_3d/runtime/Material.h"
+#include "rm_engine/space3d/runtime/ClipSettings.h"
 #include "rm_engine/space3d/runtime/MeshBake.h"
 #include "rm_engine/space3d/runtime/MeshFile.h"
 #include "rm_engine/space3d/runtime/Texture.h"
@@ -112,7 +114,7 @@ BakeResult Bake(const game_production::ExportAsset& a, game_production::ExportBa
     space3d::PictureDecoder decoder;
     std::string why;
     // モデル: エディターと同じように読む。
-    const auto mesh = space3d::LoadMeshFile(a.file, &why);
+    auto mesh = space3d::LoadMeshFile(a.file, &why);
     if (!mesh) {
         if (error) *error = why;
         return BakeResult::Failed;
@@ -161,10 +163,34 @@ BakeResult Bake(const game_production::ExportAsset& a, game_production::ExportBa
             fromCache += cached ? 1 : 0;
         }
     }
+    // クリップ: 使っているものだけ、1 つずつ .rmclip に (モデルには名前とパスの一覧)。
+    std::string clipNote;
+    if (!mesh->clips.empty()) {
+        static const std::vector<std::string> kNoDocuments;
+        const std::vector<bool> used = space3d::UsedClips(mesh->clips, a.documents ? *a.documents : kNoDocuments);
+        std::vector<std::string> left;
+        for (size_t k = 0; k < mesh->clips.size(); ++k) {
+            const space3d::Clip& clip = mesh->clips[k];
+            if (!used[k]) {
+                left.push_back(clip.name);
+                continue;
+            }
+            const std::string path = std::format("Baked/{}/clip{}.rmclip", a.id, mesh->clipFiles.size());
+            out.files.push_back({path, space3d::WriteBakedClip(clip)});
+            mesh->clipFiles.push_back({clip.name, path});
+        }
+        clipNote = std::format("・クリップ {}", mesh->clipFiles.size());
+        if (!left.empty()) {
+            std::string names;
+            for (const std::string& n : left) names += (names.empty() ? "" : "・") + n;
+            clipNote += std::format (" (どれも名前で指していないので入れなかった {}: {}。入れるには、クリップの書き出しの「いつも入れる」)", left.size(), names);
+        }
+        mesh->clips.clear();
+    }
     out.path = "Baked/" + a.id + ".rmmesh";
     out.files.insert(out.files.begin(), {out.path, space3d::WriteBakedMesh(*mesh, pictures)});
-    out.note = std::format("モデルを焼きました: {} (三角形 {}・材質 {}・絵 {}、うちキャッシュから {})", a.rel, mesh->indices.size() / 3,
-                           mesh->materials.size(), total, fromCache);
+    out.note = std::format("モデルを焼きました: {} (三角形 {}・材質 {}・絵 {}、うちキャッシュから {}{})", a.rel, mesh->indices.size() / 3,
+                           mesh->materials.size(), total, fromCache, clipNote);
     return BakeResult::Done;
 }
 

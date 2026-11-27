@@ -71,8 +71,10 @@ std::vector<ExportAsset> CollectAssets(const GameExportInput& in) {
             if (std::find(ids.begin(), ids.end(), id) == ids.end()) ids.push_back(id);
         }
     };
+    auto documents = std::make_shared<std::vector<std::string>>();
     for (const auto& s : in.scenes) {
         if (auto doc = json::Parse(s.second)) add(*doc);
+        documents->push_back(s.second);
     }
     std::vector<ExportAsset> out;
     for (size_t i = 0; i < ids.size(); ++i) {
@@ -86,13 +88,26 @@ std::vector<ExportAsset> CollectAssets(const GameExportInput& in) {
         // JSON) もさらに名指すことがある (パーティクルの効果: その部品の .rmfx ファイル)。
         if (const std::wstring ext = file.extension().wstring(); ext.size() > 3 && ext.starts_with(L".rm")) {
             if (const auto bytes = ReadAll(file)) {
-                if (auto doc = json::Parse(*bytes)) add(*doc);
+                if (auto doc = json::Parse(*bytes)) {
+                    add(*doc);
+                    documents->push_back(*bytes);
+                }
             }
         }
     }
+    // スクリプトのソース (名前でクリップを流す: anim.PlayClip("Run") など)。
+    std::error_code ec;
+    for (fs::recursive_directory_iterator it(ScriptsFolder(in.projectRoot), ec), end; !ec && it != end; it.increment(ec)) {
+        const std::wstring e = it->path().extension().wstring();
+        if (!it->is_regular_file(ec) || (e != L".h" && e != L".cpp" && e != L".hpp" && e != L".inl")) continue;
+        if (const auto bytes = ReadAll(it->path())) documents->push_back(*bytes);
+    }
     auto files = std::make_shared<std::map<std::string, fs::path>>();
     for (const ExportAsset& a : out) files->emplace(a.id, a.file);
-    for (ExportAsset& a : out) a.files = files;
+    for (ExportAsset& a : out) {
+        a.files = files;
+        a.documents = documents;
+    }
     return out;
 }
 

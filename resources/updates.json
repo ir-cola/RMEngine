@@ -3,6 +3,16 @@
   "format": 1,
   "updates": [
     {
+      "version": "0.0.45",
+      "date": "2026-11-28",
+      "items": [
+        {
+          "ja": "書き出したゲームには、使っているクリップだけが入ります (アニメーター・状態とルール・スクリプトが名前で指すもの。クリップの書き出しの「いつも入れる」でほかも)",
+          "en": "Exported games only contain the clips in use (named by animators, state rules or scripts; Always include in Clip export adds others)"
+        }
+      ]
+    },
+    {
       "version": "0.0.44",
       "date": "2026-11-28",
       "items": [
