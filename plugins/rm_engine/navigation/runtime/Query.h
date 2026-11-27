@@ -83,6 +83,9 @@ public:
     void Edges(std::vector<NavEdge>& out) const;
     void PolygonsOf(std::vector<NavPolygon>& out) const;
 
+    // Detour の dtNavMesh (このプラグインの Crowd.cpp だけが使う。載せていない: null)。
+    void* Native();
+
     struct Impl;
 
 private:

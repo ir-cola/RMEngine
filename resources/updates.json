@@ -3,7 +3,7 @@
   "format": 1,
   "updates": [
     {
-      "version": "0.0.40",
+      "version": "0.0.41",
       "date": "2026-11-27",
       "items": [
         {
@@ -17,7 +17,7 @@
       ]
     },
     {
-      "version": "0.0.39",
+      "version": "0.0.40",
       "date": "2026-11-27",
       "items": [
         {
@@ -35,7 +35,7 @@
       ]
     },
     {
-      "version": "0.0.38",
+      "version": "0.0.39",
       "date": "2026-11-27",
       "items": [
         {
@@ -49,6 +49,16 @@
         {
           "ja": "スクリプトの rm::Animator に SetIkTarget・SetIkWeight・LookAt",
           "en": "Scripts: rm::Animator gains SetIkTarget, SetIkWeight and LookAt"
+        }
+      ]
+    },
+    {
+      "version": "0.0.38",
+      "date": "2026-11-27",
+      "items": [
+        {
+          "ja": "ナビゲーション (段階 2): 部品「ナビの動く者」を付けた物が、焼いたナビメッシュの上を壁を回って行き先まで歩くように (スクリプトの RMNav.h で行き先を決め、着くと NavArrived)。Play 中は「ナビ」タブの地図に動く者と道と一覧。見本「ナビの見本 (3D)」(追いかける敵・うろうろ歩く村人)",
+          "en": "Navigation (stage 2): entities with the new Nav agent component walk around walls to their destination on the baked navmesh (scripts set it with RMNav.h and get NavArrived on arrival). During Play the Navigation tab shows the agents, their paths and a list. New sample \"Navigation sample (3D)\" (an enemy that chases you and a wandering villager)"
         }
       ]
     },

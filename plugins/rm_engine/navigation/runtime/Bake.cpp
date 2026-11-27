@@ -1,5 +1,7 @@
 #include "rm_engine/navigation/runtime/Bake.h"
 
+#include "rm_engine/navigation/runtime/DetourShared.h"
+
 #pragma warning(push, 0)
 #include "DetourNavMeshBuilder.h"
 #include "Recast.h"
@@ -18,7 +20,7 @@ namespace rm::navigation {
 namespace {
 
 constexpr int kVertsPerPoly = 6;      // 多角形の角の数の上限 (Detour の決まりの中で一番多く)
-constexpr unsigned short kWalk = 1;   // 多角形の印: 歩ける (Query.h が通れないエリアに 2 を足す)
+using detail::kWalk;  // 多角形の印: 歩ける (Query.h が通れないエリアに kBlocked を足す)
 
 float Finite(float v, float def) { return std::isfinite(v) ? v : def; }
 

@@ -1,0 +1,53 @@
+{
+  "kind": "rm_engine.template",
+  "format": 1,
+  "id": "nav_3d",
+  "path": [
+    "game",
+    "3d",
+    "navigation"
+  ],
+  "name": "ナビの見本 (3D)",
+  "description": "敵がプレイヤーを追いかけ、村人がうろうろ歩きます (部品「ナビの動く者」とスクリプト Chaser / Wanderer)。プレイヤーは矢印か WASD で歩きます。床と壁のナビメッシュは焼いてあります (「ナビ」タブ)。",
+  "order": 20,
+  "plugins": [
+    {
+      "author": "rm_engine",
+      "name": "game_production"
+    },
+    {
+      "author": "rm_engine",
+      "name": "space3d"
+    },
+    {
+      "author": "rm_engine",
+      "name": "navigation"
+    }
+  ],
+  "open": {
+    "author": "rm_engine",
+    "plugin": "game_production",
+    "software": "game"
+  },
+  "project": {
+    "softwareData": [
+      {
+        "author": "rm_engine",
+        "plugin": "game_production",
+        "software": "game",
+        "data": {
+          "settings": {
+            "space": "3d",
+            "startCamera": 1
+          },
+          "sceneList": {
+            "scenes": [
+              "7a3c51e9d24b4f6e8b0c9a1d5e7f2c41"
+            ],
+            "open": "7a3c51e9d24b4f6e8b0c9a1d5e7f2c41"
+          }
+        }
+      }
+    ]
+  }
+}

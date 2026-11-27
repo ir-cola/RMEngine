@@ -344,10 +344,21 @@ uint64_t Fingerprint(const Scene& scene, const Worlds& worlds, const NavVolume& 
     const navigation::NavAgent a = AgentOf(type);
     for (const float f : {a.radius, a.height, a.maxSlope, a.maxClimb, a.cellSize, a.cellHeight}) h.Float(f);
     for (const float f : {volume.bounds.min.x, volume.bounds.min.y, volume.bounds.min.z, volume.bounds.max.x, volume.bounds.max.y, volume.bounds.max.z}) h.Float(f);
+    h.Int(volume.volume.meshes ? 1 : 0);
+    h.Int(volume.volume.colliders ? 1 : 0);
+    // (口ごとに別に数え、名前の順に混ぜる: プラグインを読んだ順・何も読まなかった口に左右されない)
+    std::vector<std::pair<std::string, uint64_t>> parts;
+    const uint64_t nothing = navigation::Hasher{}.Value();
     for (const NavSourceInfo* s : sources) {
-        if (!SourceOn(*s, volume.volume)) continue;
-        h.Text(s->id ? s->id : "");
-        if (s->fingerprint) s->fingerprint(scene, worlds, assets, h);
+        if (!SourceOn(*s, volume.volume) || !s->fingerprint) continue;
+        navigation::Hasher sub;
+        s->fingerprint(scene, worlds, assets, sub);
+        if (sub.Value() != nothing) parts.push_back({s->id ? s->id : "", sub.Value()});
+    }
+    std::sort(parts.begin(), parts.end());
+    for (const auto& [id, value] : parts) {
+        h.Text(id);
+        h.Int(static_cast<int64_t>(value));
     }
     const std::string geometry = reflect::TypeOf<NavGeometry>().name, area = reflect::TypeOf<NavArea>().name;
     for (const game_production::TreeEntry& t : scene.TreeOrder()) {

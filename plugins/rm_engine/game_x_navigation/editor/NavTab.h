@@ -35,5 +35,6 @@ std::unique_ptr<game_production::SceneView> CreateNavTab();
 // 新しいエンティティ「ナビメッシュ」/「ナビのエリア」(Transform つき)。追加 ▸ ナビ と、タブの「ナビメッシュを置く」。
 int MakeVolume(game_production::Scene& scene, int parent, size_t index);
 int MakeArea(game_production::Scene& scene, int parent, size_t index);
+int MakeAgent(game_production::Scene& scene, int parent, size_t index);
 
 }  // namespace rm::game_x_navigation

@@ -1152,7 +1152,7 @@ docs/ANIMATION.md の段階 5 (7-1)。見本のモデル `docs/samples/models/sk
 
 - まだ無いもの: 縦も使う (はしご・よじ登り: その間は重力を止める)・腰が親を持つモデルの根 (重心を床に写す)・ナビゲーションのエージェントをルートモーションで歩かせる (口だけある: `DrivenByRootMotion`。ナビ × アニメーション が作る)・プレビューの絵にテクスチャを貼る (今は材質の色だけ)
 
-**IK (足を坂に・手を物に・顔を向ける)** (2026-11-27。版 0.0.38 から。画面では**未確認**。ビルド・テスト (`Anim3d_SolveTwoBone` / `Anim3d_ApplyTwoBoneAndLookAt` / `Anim3d_FromToAndLimit`: 届く・届かないとまっすぐ・曲げる向き・重み 0・向けるの上限・足を面に / `GameAnim_IkFeetOnStepsAndPelvis`: 段の上で足が上がる・穴で下がる・腰が下がる・平らなら変わらない・地面が分からないと何もしない / `GameAnim_IkScriptAndEntityTargets` / `AnimPhysics_GroundIgnoresOwnCharacter`: 光線が自分のキャラクターに当たらない) は通っている)
+**IK (足を坂に・手を物に・顔を向ける)** (2026-11-27。版 0.0.39 から。画面では**未確認**。ビルド・テスト (`Anim3d_SolveTwoBone` / `Anim3d_ApplyTwoBoneAndLookAt` / `Anim3d_FromToAndLimit`: 届く・届かないとまっすぐ・曲げる向き・重み 0・向けるの上限・足を面に / `GameAnim_IkFeetOnStepsAndPelvis`: 段の上で足が上がる・穴で下がる・腰が下がる・平らなら変わらない・地面が分からないと何もしない / `GameAnim_IkScriptAndEntityTargets` / `AnimPhysics_GroundIgnoresOwnCharacter`: 光線が自分のキャラクターに当たらない) は通っている)
 
 docs/ANIMATION.md の段階 6 の 7-2-1。骨の名前はモデルごとに違うので、新しい部品「**IK**」(アニメーターと同じエンティティ) に置く。
 
@@ -1167,7 +1167,7 @@ docs/ANIMATION.md の段階 6 の 7-2-1。骨の名前はモデルごとに違�
 
 - まだ無いもの: シーンビューに鎖の線と目標の印 (選んだとき)・止まっているエディターで IK をかけて見る (今は Play の間だけ)
 
-**ブレンドシェイプ (表情)** (2026-11-27。版 0.0.39 から。画面では**未確認**。ビルド・テスト (`GltfSkin_SampleBlendShapes`: 見本の形 Fat・Lean と形の重みだけのクリップ Puff・CPU の式 / `GltfSkin_MorphShaderCompiles`: Compute Shader が fxc で通る / `FbxSkin_BlendShapes`: FBX の BlendShape・DeformPercent・曲線・中間の形の警告 / `MeshBake_BlendShapesRoundTrip`: MRPH・MANI / `Anim3d_PlayerMorphWeights`: 混ぜる・フェード / `GameAnim_BlendShapesFromClipAndScript` / `Anim3d_PlayerFirstFrame`) は通っている。GPU で形が動く絵は未確認)
+**ブレンドシェイプ (表情)** (2026-11-27。版 0.0.40 から。画面では**未確認**。ビルド・テスト (`GltfSkin_SampleBlendShapes`: 見本の形 Fat・Lean と形の重みだけのクリップ Puff・CPU の式 / `GltfSkin_MorphShaderCompiles`: Compute Shader が fxc で通る / `FbxSkin_BlendShapes`: FBX の BlendShape・DeformPercent・曲線・中間の形の警告 / `MeshBake_BlendShapesRoundTrip`: MRPH・MANI / `Anim3d_PlayerMorphWeights`: 混ぜる・フェード / `GameAnim_BlendShapesFromClipAndScript` / `Anim3d_PlayerFirstFrame`) は通っている。GPU で形が動く絵は未確認)
 
 docs/ANIMATION.md の段階 6 の 7-2-2。見本のモデル `skinned_arm.gltf` に形「**Fat**」(上の段が横に太る) と「**Lean**」(上ほど +X に傾く) と、形の重みだけのクリップ「**Puff**」(2 秒で Fat が 0 → 1 → 0) を足した。glTF の `targets` と FBX の BlendShape を読む。**形を足すのは GPU の Compute Shader** (形の数に上限なし。骨で動かす前に足す)。骨のあるモデルだけ。
 
@@ -1180,7 +1180,7 @@ docs/ANIMATION.md の段階 6 の 7-2-2。見本のモデル `skinned_arm.gltf` 
 
 - まだ無いもの: 骨の無いモデルの形 (今は骨のあるモデルだけ)・アニメーション タブのプレビューで形を試す (つまみはモデルのインスペクター)
 
-**揺れる骨 (髪・スカート) と VRM の揺れの設定** (2026-11-27。版 0.0.40 から。画面では**未確認**。ビルド・テスト (`Anim3d_SpringsSagAndKeepLength`: 重力で垂れる・長さが変わらない・戻る強さで戻る / `Anim3d_SpringsCollideWarpAndFrameRate`: 当たりの球から出る・ワープで始め直す・30 fps と 60 fps でほぼ同じ / `GameAnim_SpringBonesFromComponentAndModel`: 部品の鎖とモデルの設定・遅れてついて行く・ResetSprings / `GltfSkin_SampleSpringBones`: VRM 1.0 の VRMC_springBone / `MeshBake_SpringBonesRoundTrip`: SPRG) は通っている)
+**揺れる骨 (髪・スカート) と VRM の揺れの設定** (2026-11-27。版 0.0.41 から。画面では**未確認**。ビルド・テスト (`Anim3d_SpringsSagAndKeepLength`: 重力で垂れる・長さが変わらない・戻る強さで戻る / `Anim3d_SpringsCollideWarpAndFrameRate`: 当たりの球から出る・ワープで始め直す・30 fps と 60 fps でほぼ同じ / `GameAnim_SpringBonesFromComponentAndModel`: 部品の鎖とモデルの設定・遅れてついて行く・ResetSprings / `GltfSkin_SampleSpringBones`: VRM 1.0 の VRMC_springBone / `MeshBake_SpringBonesRoundTrip`: SPRG) は通っている)
 
 docs/ANIMATION.md の段階 6 の 7-2-3。式は VRM の揺れ (VRMC_springBone) と同じなので、VRM の値をそのまま使える。見本のモデル `skinned_arm.gltf` に VRM 1.0 の揺れの設定 (鎖 Middle → Top・Base に当たりの球) を足した。
 
@@ -2711,6 +2711,45 @@ void Update(inout Particle p, float dt, inout Random rnd) { ... } // 毎フレ�
 「Recast Navigation」。段階 1 ではゲームの中でまだ使わない (歩かせるのは段階 2)。古いナビメッシュでも書き出しは止めない (古いという警告は後で)
 
 **2D のシーン**: 「ナビ」タブは「2D のナビメッシュは、これから作ります (段階 5)」と出る
+
+## 7-17. ナビゲーション 段階 2: 歩かせる (2026-11-27、版 0.0.38。画面では**未確認**。ビルド・テスト (`tests/TestNavigation.cpp`)・`tools/check_export.ps1` の nav_3d (書き出した「ナビの見本 (3D)」が焼いたナビメッシュを読み、敵が道を見つける) は通っている)
+
+部品「**ナビの動く者**」を付けた物が、焼いたナビメッシュの上を行き先まで壁を回って歩く (中身は DetourCrowd。よけるのは段階 3)。行き先はスクリプトの
+`RMNav.h` (`rm::NavAgent(self).SetDestination(p)`) で決め、着くと `OnEvent` に `NavArrived` が届く。段階 2 は Transform を直に動かす
+(物理の「キャラクター」がある物も。コンソールに 1 回知らせる。キャラクターで歩くのは段階 3)。
+
+**見本で試す (一番早い)**
+
+1. Hub の新規作成で「ゲーム」→「3D のゲーム」の下の「**ナビの見本 (3D)**」を選んで作る (要るプラグイン: ゲーム制作・3D 空間・ナビゲーション。
+   つなぎは自動で入る)。開くとスクリプト (PlayerMove・Chaser・Wanderer) のビルドが走る。「ビルドしました」まで待つ
+2. 「ナビ」タブを開く: 範囲「1階」は「焼いた」(焼いた物は見本に入っている)。床が塗られ、壁と箱を避けた縁が見える
+3. ▶ (Play)
+   - 見えるはず: 敵 (箱) がプレイヤーの所へ、壁を回って歩いてくる。村人 (球) がうろうろ歩く (止まっては次の所へ)
+   - コンソールに「ナビ: ナビメッシュ「1階」を読みました (区画 …)」「敵: プレイヤーを追いかけます」「敵: プレイヤーまでの道が見つかりました (角 n 個)」
+4. ゲームビューをクリックしてから、矢印か WASD でプレイヤーを動かす → 敵がついてくる (行き先は 0.5 秒ごとにプレイヤーの今いる所)。
+   プレイヤーは壁を抜けない (歩いた先をナビメッシュの一番近い点に寄せている)。追いつくとコンソールに「敵: プレイヤーに追いつきました」
+5. Play 中の「ナビ」タブ (見本 B): 地図に動く者の丸 (青) と進む向きの線、今の道 (橙)。右に「動く者 (Play 中)」の一覧 (名前・状態・速さ・残り)。行をクリックすると、その物が選ばれる
+6. シーンビュー: 動く者を選ぶか「形: 全部」で、体の輪 (型の半径)。Play 中は道の線・今の速さの矢印・望む速さの矢印 (薄く)
+7. ■ で止めると全部が元の場所に戻る (ナビの世界は Play のコピーと一緒に捨てる)
+
+**自分のシーンで**
+
+1. 段階 1 (7-16) のとおりナビメッシュを置いて焼く
+2. 追加 ▸ ナビ ▸ **ナビの動く者** (Transform と部品「ナビの動く者」が付く)。見た目は子に箱などを (エンティティの位置が足元)
+3. 部品の欄: エージェントの型 (▾)・速さ・加速・回る速さ (0: 向きを変えない)・止まる距離・着く前にゆるめる
+4. スクリプトで行き先を決める (下)。決めないと立っているだけ。ナビメッシュの外に置くと、コンソールに 1 回知らせて歩かない
+
+**スクリプト (`#include "RMNav.h"`)**
+
+- `rm::NavAgent agent(self);` → `SetDestination(p)`・`Stop()` / `Resume()`・`SetSpeed(5)`・`Warp(p)`・`HasPath()`・`PathPending()`・`PathPartial()`・`Arrived()`・
+  `RemainingDistance()`・`Velocity()`・`DesiredVelocity()`
+- 動く者なし: `rm::Nav::FindPath(a, b, path)`・`Raycast(a, b)`・`ClosestPoint(p)`・`RandomPoint(center, r)`・`SetAreaCost("沼", 5)`・`SetAreaOpen("立入禁止", true)`
+- ナビメッシュは最初の固定の刻みで読むので、`BeginPlay` の中の `FindPath` などは 0 を返す (行き先を頼むのはよい: 覚えておいて次の刻みで探す)
+- `void OnEvent(rm::Entity self, const rm::Event& e) { if (e.Is("NavArrived")) ... }`
+
+**シーンの設定「ナビ」**: 「動く者の上限」(既定 128。1 つのナビメッシュの上を同時に歩ける数。超えた物は歩かず知らせる)
+
+**書き出し**: 書き出したゲームでも同じに歩く (焼いた物は `.rmpak` の中から読む)。`tools/check_export.ps1` が見本を書き出して確かめる
 
 ## 8. リフレクションとインスペクター
 

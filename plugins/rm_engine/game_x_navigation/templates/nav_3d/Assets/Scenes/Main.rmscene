@@ -1,0 +1,499 @@
+{
+  "kind": "rm_engine.scene",
+  "format": 2,
+  "nextId": 15,
+  "entities": [
+    {
+      "id": 1,
+      "parent": 0,
+      "name": "カメラ",
+      "active": true,
+      "components": [
+        {
+          "type": "rm::space3d::Transform",
+          "data": {
+            "position": [
+              0,
+              20,
+              -17
+            ],
+            "rotation": [
+              50,
+              0,
+              0
+            ],
+            "scale": [
+              1,
+              1,
+              1
+            ]
+          }
+        },
+        {
+          "type": "rm::game_x_3d::Camera",
+          "data": {}
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "parent": 0,
+      "name": "光",
+      "active": true,
+      "components": [
+        {
+          "type": "rm::space3d::Transform",
+          "data": {
+            "position": [
+              0,
+              10,
+              0
+            ],
+            "rotation": [
+              50,
+              30,
+              0
+            ],
+            "scale": [
+              1,
+              1,
+              1
+            ]
+          }
+        },
+        {
+          "type": "rm::game_x_3d::Light",
+          "data": {
+            "kind": "Directional"
+          }
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "parent": 0,
+      "name": "床",
+      "active": true,
+      "components": [
+        {
+          "type": "rm::space3d::Transform",
+          "data": {
+            "position": [
+              0,
+              0,
+              0
+            ],
+            "rotation": [
+              0,
+              0,
+              0
+            ],
+            "scale": [
+              3,
+              1,
+              3
+            ]
+          }
+        },
+        {
+          "type": "rm::game_x_3d::MeshRenderer",
+          "data": {
+            "shape": "Plane"
+          }
+        }
+      ]
+    },
+    {
+      "id": 4,
+      "parent": 0,
+      "name": "壁",
+      "active": true,
+      "components": [
+        {
+          "type": "rm::space3d::Transform",
+          "data": {
+            "position": [
+              0,
+              1,
+              3
+            ],
+            "rotation": [
+              0,
+              0,
+              0
+            ],
+            "scale": [
+              14,
+              2,
+              1
+            ]
+          }
+        },
+        {
+          "type": "rm::game_x_3d::MeshRenderer",
+          "data": {
+            "shape": "Box"
+          }
+        }
+      ]
+    },
+    {
+      "id": 5,
+      "parent": 0,
+      "name": "壁 2",
+      "active": true,
+      "components": [
+        {
+          "type": "rm::space3d::Transform",
+          "data": {
+            "position": [
+              -7,
+              1,
+              -4
+            ],
+            "rotation": [
+              0,
+              0,
+              0
+            ],
+            "scale": [
+              1,
+              2,
+              9
+            ]
+          }
+        },
+        {
+          "type": "rm::game_x_3d::MeshRenderer",
+          "data": {
+            "shape": "Box"
+          }
+        }
+      ]
+    },
+    {
+      "id": 6,
+      "parent": 0,
+      "name": "箱",
+      "active": true,
+      "components": [
+        {
+          "type": "rm::space3d::Transform",
+          "data": {
+            "position": [
+              6,
+              0.75,
+              -5
+            ],
+            "rotation": [
+              0,
+              0,
+              0
+            ],
+            "scale": [
+              2,
+              1.5,
+              2
+            ]
+          }
+        },
+        {
+          "type": "rm::game_x_3d::MeshRenderer",
+          "data": {
+            "shape": "Box"
+          }
+        }
+      ]
+    },
+    {
+      "id": 7,
+      "parent": 0,
+      "name": "段 (登れる)",
+      "active": true,
+      "components": [
+        {
+          "type": "rm::space3d::Transform",
+          "data": {
+            "position": [
+              5,
+              0.1,
+              8
+            ],
+            "rotation": [
+              0,
+              0,
+              0
+            ],
+            "scale": [
+              4,
+              0.2,
+              3
+            ]
+          }
+        },
+        {
+          "type": "rm::game_x_3d::MeshRenderer",
+          "data": {
+            "shape": "Box"
+          }
+        }
+      ]
+    },
+    {
+      "id": 8,
+      "parent": 0,
+      "name": "1階",
+      "active": true,
+      "components": [
+        {
+          "type": "rm::space3d::Transform",
+          "data": {
+            "position": [
+              0,
+              1,
+              0
+            ],
+            "rotation": [
+              0,
+              0,
+              0
+            ],
+            "scale": [
+              1,
+              1,
+              1
+            ]
+          }
+        },
+        {
+          "type": "rm::game_x_navigation::NavMeshVolume",
+          "data": {
+            "size": [
+              30,
+              6,
+              30
+            ],
+            "baked": "c1e84b2f7d9a4c3e9f0b6a5d8e2c7b13"
+          }
+        }
+      ]
+    },
+    {
+      "id": 9,
+      "parent": 0,
+      "name": "プレイヤー",
+      "active": true,
+      "components": [
+        {
+          "type": "rm::space3d::Transform",
+          "data": {
+            "position": [
+              -10,
+              0,
+              -10
+            ],
+            "rotation": [
+              0,
+              0,
+              0
+            ],
+            "scale": [
+              1,
+              1,
+              1
+            ]
+          }
+        },
+        {
+          "type": "PlayerMove",
+          "data": {
+            "speed": 5
+          }
+        }
+      ],
+      "tag": "Player"
+    },
+    {
+      "id": 10,
+      "parent": 9,
+      "name": "体",
+      "active": true,
+      "components": [
+        {
+          "type": "rm::space3d::Transform",
+          "data": {
+            "position": [
+              0,
+              0.6,
+              0
+            ],
+            "rotation": [
+              0,
+              0,
+              0
+            ],
+            "scale": [
+              0.6,
+              1.2,
+              0.6
+            ]
+          }
+        },
+        {
+          "type": "rm::game_x_3d::MeshRenderer",
+          "data": {
+            "shape": "Box"
+          }
+        }
+      ]
+    },
+    {
+      "id": 11,
+      "parent": 0,
+      "name": "敵",
+      "active": true,
+      "components": [
+        {
+          "type": "rm::space3d::Transform",
+          "data": {
+            "position": [
+              10,
+              0,
+              10
+            ],
+            "rotation": [
+              0,
+              0,
+              0
+            ],
+            "scale": [
+              1,
+              1,
+              1
+            ]
+          }
+        },
+        {
+          "type": "rm::game_x_navigation::NavAgent",
+          "data": {
+            "speed": 3
+          }
+        },
+        {
+          "type": "Chaser",
+          "data": {
+            "interval": 0.5
+          }
+        }
+      ]
+    },
+    {
+      "id": 12,
+      "parent": 11,
+      "name": "体",
+      "active": true,
+      "components": [
+        {
+          "type": "rm::space3d::Transform",
+          "data": {
+            "position": [
+              0,
+              0.6,
+              0
+            ],
+            "rotation": [
+              0,
+              0,
+              0
+            ],
+            "scale": [
+              0.6,
+              1.2,
+              0.6
+            ]
+          }
+        },
+        {
+          "type": "rm::game_x_3d::MeshRenderer",
+          "data": {
+            "shape": "Box"
+          }
+        }
+      ]
+    },
+    {
+      "id": 13,
+      "parent": 0,
+      "name": "村人",
+      "active": true,
+      "components": [
+        {
+          "type": "rm::space3d::Transform",
+          "data": {
+            "position": [
+              -8,
+              0,
+              8
+            ],
+            "rotation": [
+              0,
+              0,
+              0
+            ],
+            "scale": [
+              1,
+              1,
+              1
+            ]
+          }
+        },
+        {
+          "type": "rm::game_x_navigation::NavAgent",
+          "data": {
+            "speed": 1.5
+          }
+        },
+        {
+          "type": "Wanderer",
+          "data": {
+            "radius": 8
+          }
+        }
+      ]
+    },
+    {
+      "id": 14,
+      "parent": 13,
+      "name": "体",
+      "active": true,
+      "components": [
+        {
+          "type": "rm::space3d::Transform",
+          "data": {
+            "position": [
+              0,
+              0.5,
+              0
+            ],
+            "rotation": [
+              0,
+              0,
+              0
+            ],
+            "scale": [
+              0.5,
+              1,
+              0.5
+            ]
+          }
+        },
+        {
+          "type": "rm::game_x_3d::MeshRenderer",
+          "data": {
+            "shape": "Sphere"
+          }
+        }
+      ]
+    }
+  ]
+}

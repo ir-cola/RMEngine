@@ -19,6 +19,8 @@ namespace rm::game_x_navigation {
 void BoundsLines(const navigation::NavBounds& b, Color color, game_production::DebugDraw& out);
 void MeshLines(const NavPreview& p, game_production::DebugDraw& out);
 void AreaLines(const game_production::Scene& scene, const Worlds& worlds, std::span<const int> selection, bool all, game_production::DebugDraw& out);
+// ナビの動く者: 体の輪 (型の半径)。Play 中は道 (角の点)・今の速さ・望む速さの矢印も。
+void AgentLines(const game_production::Scene& scene, const Worlds& worlds, std::span<const int> selection, bool all, game_production::DebugDraw& out);
 // 口 scene_lines (hostLines) の中身。
 void NavSceneLines(editor::SoftwareHost& host, const game_production::Scene& scene, std::span<const int> selection, bool all,
                    game_production::DebugDraw& out);

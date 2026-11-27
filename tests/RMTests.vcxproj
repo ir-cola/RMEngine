@@ -281,6 +281,9 @@
     <ClCompile Include="..\plugins\rm_engine\navigation\runtime\Bake.cpp" />
     <ClCompile Include="..\plugins\rm_engine\navigation\runtime\NavFile.cpp" />
     <ClCompile Include="..\plugins\rm_engine\navigation\runtime\Query.cpp" />
+    <ClCompile Include="..\plugins\rm_engine\navigation\runtime\Crowd.cpp" />
+    <ClCompile Include="..\plugins\rm_engine\game_x_navigation\runtime\NavWorld.cpp" />
+    <ClCompile Include="..\plugins\rm_engine\game_x_navigation\runtime\ScriptNav.cpp" />
     <ClCompile Include="..\plugins\rm_engine\game_x_navigation\runtime\NavScene.cpp" />
     <ClCompile Include="..\plugins\rm_engine\game_x_navigation\editor\NavBake.cpp" />
     <ClCompile Include="..\plugins\rm_engine\game_x_navigation\runtime\Register.cpp">

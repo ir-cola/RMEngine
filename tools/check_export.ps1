@@ -19,7 +19,8 @@ $templates = @(
     @('rm_engine', 'game_production', 'game'),
     @('rm_engine', 'game_x_2d', 'game_2d'),
     @('rm_engine', 'game_x_3d', 'game_3d'),
-    @('rm_engine', 'physics', 'physics_3d')
+    @('rm_engine', 'physics', 'physics_3d'),
+    @('rm_engine', 'game_x_navigation', 'nav_3d')
 )
 $failed = 0
 # 書いたファイルにこの PC のパス (リポジトリ、書き出し先のフォルダ、ユーザーの) があるか。UTF-8 でも
@@ -52,6 +53,7 @@ foreach ($t in $templates) {
     $needs = @()
     if ($t[2] -eq 'game_2d' -or $t[2] -eq 'game_3d') { $needs += 'stb_vorbis' }
     if ($t[2] -eq 'physics_3d') { $needs += 'Jolt Physics' }
+    if ($t[2] -eq 'nav_3d') { $needs += 'Recast Navigation' }
     $licenseFile = Join-Path $game 'LICENSES.txt'
     $licenses = if (Test-Path $licenseFile) { [IO.File]::ReadAllText($licenseFile, (New-Object System.Text.UTF8Encoding $false)) } else { '' }
     $lacking = @($needs | Where-Object { -not $licenses.Contains($_) })
@@ -78,6 +80,17 @@ foreach ($t in $templates) {
             continue
         }
         $sound = '。BGM (bgm.wav) を読んで鳴らしました'
+    }
+    # ナビの見本: 焼いたナビメッシュを .rmpak から読み、敵のスクリプトが道を見つけた (game.log)。
+    if ($t[2] -eq 'nav_3d') {
+        $gameLog = [IO.File]::ReadAllText((Join-Path $game 'game.log'), (New-Object System.Text.UTF8Encoding $false))
+        if ($gameLog -notmatch 'ナビ: ナビメッシュ「1階」を読みました' -or $gameLog -notmatch '敵: プレイヤーまでの道が見つかりました') {
+            Write-Host "NG  $($t[2]): ナビメッシュを読んで道を探していません"
+            Get-Content (Join-Path $game 'game.log') -Encoding UTF8 -ErrorAction SilentlyContinue | Select-Object -Last 10 | ForEach-Object { Write-Host "    $_" }
+            $failed++
+            continue
+        }
+        $sound = '。焼いたナビメッシュを読み、敵が道を見つけました'
     }
     $size = [Math]::Round($exe[0].Length / 1KB)
     $pak = [Math]::Round((Get-Item (Join-Path $game 'Game.rmpak')).Length / 1KB, 1)

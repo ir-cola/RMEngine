@@ -11,7 +11,15 @@
 #include "rm_engine/game_x_3d/runtime/MeshRenderer.h"
 #include "rm_engine/game_x_navigation/editor/NavBake.h"
 #include "rm_engine/game_x_navigation/runtime/NavScene.h"
+#include "rm_engine/game_x_navigation/runtime/NavWorld.h"
+#include "rm_engine/game_x_navigation/runtime/Register.h"
+#include "rm_engine/game_x_navigation/runtime/ScriptNav.h"
+#include "rm_engine/game_x_navigation/runtime/sdk/RMNavAbi.h"
+#include "rm_engine/game_production/runtime/SceneFile.h"
+#include "base/Version.h"
+#include "platform/Shell.h"
 #include "rm_engine/navigation/runtime/Bake.h"
+#include "rm_engine/navigation/runtime/Crowd.h"
 #include "rm_engine/navigation/runtime/NavFile.h"
 #include "rm_engine/navigation/runtime/Query.h"
 #include "rm_engine/navigation_x_3d/runtime/Register.h"
@@ -21,6 +29,7 @@
 #include "rm_engine/space3d/runtime/Transform.h"
 
 #include <cmath>
+#include <cstdlib>
 #include <filesystem>
 
 using namespace rm;
@@ -264,7 +273,7 @@ Scene NavScene() {
     s.SetSettingTypes({&reflect::TypeOf<NavSettings>()});
     s.SetComponentTypes({&reflect::TypeOf<space3d::Transform>(), &reflect::TypeOf<game_x_3d::MeshRenderer>(), &reflect::TypeOf<NavMeshVolume>(),
                          &reflect::TypeOf<NavGeometry>(), &reflect::TypeOf<NavArea>(), &reflect::TypeOf<physics::Rigidbody>(),
-                         &reflect::TypeOf<physics::Collider>()});
+                         &reflect::TypeOf<physics::Collider>(), &reflect::TypeOf<NavAgent>()});
     return s;
 }
 
@@ -299,11 +308,11 @@ RM_TEST(NavCollectFromSceneFollowsTheRules) {
     AddTo<NavGeometry>(s, deco).mode = NavGeometryMode::Exclude;
     const int crate = PutShape(s, "箱 (動く)", game_x_3d::MeshShape::Box, {-5, 0.5f, 5}, {1, 1, 1});
     AddTo<physics::Rigidbody>(s, crate).motion = physics::Motion::Dynamic;
-    const int far = PutShape(s, "遠い", game_x_3d::MeshShape::Box, {500, 0, 0}, {1, 1, 1});
+    const int distant = PutShape(s, "遠い", game_x_3d::MeshShape::Box, {500, 0, 0}, {1, 1, 1});
     const int vol = s.Create("1階");
     AddTo<space3d::Transform>(s, vol).position = {0, 1, 0};
     AddTo<NavMeshVolume>(s, vol).size = {22, 6, 22};
-    (void)floor, (void)wall, (void)far;
+    (void)floor, (void)wall, (void)distant;
 
     const Worlds worlds = WorldsOf(s);
     const auto v = FindVolume(s, worlds, vol);
@@ -441,4 +450,235 @@ RM_TEST(NavBakeJobWritesTheFile) {
     stop.request_stop();
     const BakeOutcome s2 = RunBake(job, stop.get_token(), nullptr);
     CHECK(!s2.ok && s2.stopped);
+}
+
+// --- 段階 2: 群れ・Play の間のナビの世界・スクリプト・見本の焼いた物 -----------------------------------------
+RM_TEST(NavCrowdWalksAroundTheWallToTheTarget) {
+    NavInput in;
+    Floor(in, 20, 20);
+    AddShape(in, space3d::Shape::Box, {1, 2, 14}, {0, 1, 0});
+    NavMesh mesh;
+    CHECK(mesh.Load(BakeOk(in, Options({-11, -1, -11}, {11, 4, 11})), nullptr));
+    NavCrowd crowd;
+    CHECK(crowd.Init(mesh, 8, 0.5f));
+    AgentParams p;
+    p.maxSpeed = 4;
+    p.maxAcceleration = 20;
+    const int a = crowd.Add({-5, 0, 0}, p);
+    CHECK(a >= 0);
+    CHECK(crowd.Add({-50, 0, 0}, p) == -1);  // ナビメッシュの外
+    CHECK(crowd.SetTarget(a, {5, 0, 0}));
+    crowd.Update(1.f / 60);
+    CHECK(crowd.View(a).target == AgentView::Target::Moving);
+    CHECK(crowd.Remaining(a) > 16.f);  // 壁を回る道
+    std::vector<Vec3> path;
+    crowd.Path(a, path);
+    CHECK(path.size() >= 3);
+    float walked = 0;
+    Vec3 last = crowd.View(a).position;
+    for (int i = 0; i < 60 * 12 && crowd.Remaining(a) > 0.2f; ++i) {
+        crowd.Update(1.f / 60);
+        const Vec3 now = crowd.View(a).position;
+        walked += std::sqrt((now.x - last.x) * (now.x - last.x) + (now.z - last.z) * (now.z - last.z));
+        CHECK(!(now.x > -0.5f && now.x < 0.5f && now.z > -7 && now.z < 7));  // 壁を抜けない
+        last = now;
+    }
+    CHECK(crowd.Remaining(a) <= 0.2f);
+    CHECK(Near(last.x, 5, 0.4f) && Near(last.z, 0, 0.4f));
+    CHECK(walked > 16.f);
+    crowd.ClearTarget(a);
+    CHECK(crowd.View(a).target == AgentView::Target::None);
+}
+
+RM_TEST(NavTurnTowardTurnsTheShortWay) {
+    CHECK(Near(game_x_navigation::TurnToward(0, {1, 0, 0}, 1000), 90));  // +X は 90 度 (+Z が 0)
+    CHECK(Near(game_x_navigation::TurnToward(0, {1, 0, 0}, 30), 30));    // 多くて 30 度
+    CHECK(Near(game_x_navigation::TurnToward(170, {-0.1f, 0, -1}, 1000), 185.7106f, 0.01f));  // 180 をまたいで短い方へ
+    CHECK(Near(game_x_navigation::TurnToward(45, {0, 0, 0}, 1000), 45));  // 向きなし
+    // (Transform の回転 Y が 90 度のとき、+Z が +X を向く: 3D 空間の決まりと合っている)
+    const space3d::Mat4 r = space3d::RotationMatrix({0, 90, 0});
+    const Vec3 f = space3d::TransformPoint(r, {0, 0, 1});
+    CHECK(Near(f.x, 1) && Near(f.z, 0));
+}
+
+namespace {
+
+// 床と壁のシーン + 焼いた物 (バイト列) を持つ AssetAccess。
+struct NavPlay {
+    Scene scene = NavScene();
+    std::string baked;
+    game_production::AssetAccess assets;
+    RuntimeRegistry reg;
+    std::vector<game_production::SystemEvent> events;
+    int agent = 0;
+
+    NavPlay() {
+        PutShape(scene, "床", game_x_3d::MeshShape::Plane, {0, 0, 0}, {2, 1, 2});
+        PutShape(scene, "壁", game_x_3d::MeshShape::Box, {0, 1, 0}, {1, 2, 14});
+        const int vol = scene.Create("1階");
+        AddTo<space3d::Transform>(scene, vol).position = {0, 1, 0};
+        AddTo<NavMeshVolume>(scene, vol).size = {22, 6, 22};
+        navigation_x_3d::RegisterRuntime(reg);
+        game_x_navigation::RegisterRuntime(reg);
+        const Worlds worlds = WorldsOf(scene);
+        const auto v = FindVolume(scene, worlds, vol);
+        std::vector<const NavSourceInfo*> sources = SourcesOf(reg);
+        NavInput in;
+        CollectInput(scene, worlds, *v, sources, nullptr, {}, in);
+        navigation::BakeOptions o;
+        o.bounds = v->bounds;
+        o.agent = AgentOf(scene.Setting<NavSettings>()->agentTypes.front());
+        NavData d;
+        navigation::Bake(in, o, {}, nullptr, d, nullptr);
+        NavFileHead h;
+        h.agentType = 1;
+        baked = WriteNavFile(d, h);
+        static_cast<NavMeshVolume*>(scene.Find(vol)->FindComponent(reflect::TypeOf<NavMeshVolume>().name)->value.Get())->baked = AssetRef{"00000000000000000000000000000abc"};
+        std::string* b = &baked;
+        assets.bytes = [b](const AssetRef& r) -> std::optional<std::string> {
+            if (r.guid == "00000000000000000000000000000abc") return *b;
+            return std::nullopt;
+        };
+        agent = scene.Create("敵");
+        AddTo<space3d::Transform>(scene, agent).position = {-5, 0.5f, 0};
+        AddTo<NavAgent>(scene, agent).speed = 4;
+    }
+    void Step(int n) {
+        for (int i = 0; i < n; ++i) {
+            game_production::SystemContext ctx{scene, 1.f / 60};
+            ctx.assets = &assets;
+            ctx.events = &events;
+            ctx.registry = &reg;
+            RunNavigation(ctx);
+        }
+    }
+    Vec3 Position() {
+        return static_cast<space3d::Transform*>(scene.Find(agent)->FindComponent(reflect::TypeOf<space3d::Transform>().name)->value.Get())->position;
+    }
+};
+
+}  // namespace
+
+RM_TEST(NavWorldWalksTheAgentAndSendsArrived) {
+    NavPlay play;
+    NavWorldOf(play.scene).SetDestination(play.agent, {5, 0, 0});  // (読む前に頼んでよい)
+    play.Step(1);
+    NavWorld* w = FindNavWorld(play.scene);
+    CHECK(w && w->Loaded() && w->Meshes().size() == 1);
+    const NavWorld::Agent* a = w ? w->FindAgent(play.agent) : nullptr;
+    CHECK(a && a->index >= 0 && a->hasTarget);
+    CHECK(Near(play.Position().y, 0, 0.2f));  // 足元がナビメッシュの上に
+    play.Step(60 * 10);
+    CHECK(Near(play.Position().x, 5, 0.3f) && Near(play.Position().z, 0, 0.3f));
+    int arrived = 0;
+    for (const auto& e : play.events) arrived += e.name == kNavArrivedEvent && e.target == play.agent ? 1 : 0;
+    CHECK(arrived == 1);
+    a = w->FindAgent(play.agent);
+    CHECK(a && a->arrived && !a->hasTarget);
+    // 向きは進んだ向き (最後は +X へ回り込んで着く)。
+    const auto rot = static_cast<space3d::Transform*>(play.scene.Find(play.agent)->FindComponent(reflect::TypeOf<space3d::Transform>().name)->value.Get())->rotation;
+    CHECK(std::isfinite(rot.y));
+    // スクリプトが動かしたら (Transform を書いた)、そこから歩き直す。
+    static_cast<space3d::Transform*>(play.scene.Find(play.agent)->FindComponent(reflect::TypeOf<space3d::Transform>().name)->value.Get())->position = {5, 0, -8};
+    w->SetDestination(play.agent, {5, 0, 8});
+    play.Step(60 * 6);
+    CHECK(Near(play.Position().x, 5, 0.3f) && Near(play.Position().z, 8, 0.3f));
+    // 止まる: 行き先があっても動かない。
+    w->SetDestination(play.agent, {-5, 0, 8});
+    w->Stop(play.agent);
+    play.Step(30);
+    CHECK(Near(play.Position().x, 5, 0.3f));
+    w->Resume(play.agent);
+    play.Step(60);
+    CHECK(play.Position().x < 4.f);
+    // 部品を外すと群れから外れる。
+    play.scene.RemoveComponent(play.agent, reflect::TypeOf<NavAgent>().name);
+    play.Step(1);
+    CHECK(w->FindAgent(play.agent) == nullptr);
+}
+
+RM_TEST(NavScriptPartAnswers) {
+    NavPlay play;
+    play.Step(1);
+    const auto& part = game_x_navigation::ScriptNavPart();
+    CHECK(std::string_view(part.name) == RM_PART_NAV && part.version == RM_PART_NAV_VERSION);
+    const auto* api = static_cast<const RmNavApi*>(part.table);
+    game_production::ScriptWorld sw;
+    sw.scene = &play.scene;
+    const float a[3] = {-5, 0, 0}, b[3] = {5, 0, 0};
+    float pts[3 * 32];
+    int n = 0;
+    CHECK(api->findPath(&sw, a, b, pts, 32, &n) == 1);
+    CHECK(n >= 4);
+    CHECK(api->raycast(&sw, a, b) == 0);  // 壁
+    float out[3];
+    const float away[3] = {50, 0, 50};
+    CHECK(api->closestPoint(&sw, a, out) == 1 && Near(out[1], 0, 0.2f));
+    CHECK(api->closestPoint(&sw, away, out) == 0);
+    CHECK(api->randomPoint(&sw, a, 3, out) == 1);
+    CHECK(api->setDestination(&sw, static_cast<uint64_t>(play.agent), b) == 1);
+    CHECK(api->setDestination(&sw, 99999, b) == 0);  // 動く者ではない
+    play.Step(2);
+    RmNavAgentState st{};
+    CHECK(api->state(&sw, static_cast<uint64_t>(play.agent), &st) == 1);
+    CHECK(st.onMesh == 1 && st.hasPath == 1 && st.remaining > 10.f);
+    CHECK(api->setAreaCost(&sw, "沼", 9) == 1 && api->setAreaCost(&sw, "無いエリア", 9) == 0);
+    CHECK(FindNavWorld(play.scene)->Filter(*play.scene.Setting<NavSettings>()).costs[1] == 9.f);
+    CHECK(api->setAreaOpen(&sw, "立入禁止", 1) == 1);
+    CHECK(!FindNavWorld(play.scene)->Blocked(*play.scene.Setting<NavSettings>()).test(2));
+}
+
+// 見本「ナビの見本 (3D)」の焼いた物は、そのシーンのものか (シーンを変えたら焼き直す)。
+// 焼き直すとき: 環境変数 RM_REBAKE_NAV_TEMPLATE=1 で RMTests.exe を走らせる (ファイルを書き直す)。
+RM_TEST(NavTemplateIsBaked) {
+    const std::filesystem::path root = std::filesystem::path(__FILE__).parent_path().parent_path() / L"plugins" / L"rm_engine" / L"game_x_navigation" /
+                                       L"templates" / L"nav_3d" / L"Assets";
+    std::string why;
+    const auto text = platform::ReadFileBytes(root / L"Scenes" / L"Main.rmscene", &why);
+    CHECK(text.has_value());
+    if (!text) return;
+    const auto doc = game_production::ReadSceneFile(*text, &why);
+    CHECK(doc.has_value());
+    if (!doc) return;
+    Scene s = NavScene();
+    s.SetComponentTypes({&reflect::TypeOf<space3d::Transform>(), &reflect::TypeOf<game_x_3d::MeshRenderer>(), &reflect::TypeOf<NavMeshVolume>(),
+                         &reflect::TypeOf<NavAgent>()});
+    s.Load(*doc);
+    RuntimeRegistry reg;
+    navigation_x_3d::RegisterRuntime(reg);
+    navigation_x_physics::RegisterRuntime(reg);
+    const auto sources = SourcesOf(reg);
+    const Worlds worlds = WorldsOf(s);
+    const auto vols = Volumes(s, worlds);
+    CHECK(vols.size() == 1);
+    if (vols.size() != 1) return;
+    const NavAgentType& type = *FindAgentType(*s.Setting<NavSettings>(), vols[0].volume.agentType);
+    const std::string print = FingerprintText(Fingerprint(s, worlds, vols[0], type, sources, nullptr));
+    const std::filesystem::path file = root / L"Navigation" / PathFromUtf8("1階.rmnav");
+    char* rebake = nullptr;
+    size_t len = 0;
+    if (_dupenv_s(&rebake, &len, "RM_REBAKE_NAV_TEMPLATE") == 0 && rebake) {
+        free(rebake);
+        NavInput in;
+        CHECK(CollectInput(s, worlds, vols[0], sources, nullptr, {}, in));
+        navigation::BakeOptions o;
+        o.bounds = vols[0].bounds;
+        o.agent = AgentOf(type);
+        NavData d;
+        CHECK(navigation::Bake(in, o, {}, nullptr, d, nullptr));
+        NavFileHead h;
+        h.engine = kEngineVersion;
+        h.agentType = type.id;
+        h.agentName = type.name;
+        h.fingerprint = print;
+        CHECK(platform::WriteFileAtomic(file, WriteNavFile(d, h), &why));
+    }
+    const auto bytes = platform::ReadFileBytes(file, &why);
+    CHECK(bytes.has_value());
+    if (!bytes) return;
+    NavFileHead head;
+    const auto data = ReadNavFile(*bytes, &head, &why);
+    CHECK(data.has_value() && !data->tiles.empty());
+    CHECK(head.fingerprint == print);  // 違う: 見本のシーンが変わった。RM_REBAKE_NAV_TEMPLATE=1 で焼き直す
+    CHECK(vols[0].volume.baked.guid == "c1e84b2f7d9a4c3e9f0b6a5d8e2c7b13");
 }

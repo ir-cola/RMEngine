@@ -17,6 +17,7 @@
 #include "rm_engine/game_x_navigation/editor/NavLines.h"
 #include "rm_engine/game_x_navigation/editor/NavPreview.h"
 #include "rm_engine/game_x_navigation/runtime/NavScene.h"
+#include "rm_engine/game_x_navigation/runtime/NavWorld.h"
 
 #include <algorithm>
 #include <atomic>
@@ -173,7 +174,7 @@ public:
 
         DrawMap(c, mapR, host, *settings);
         if (side.w >= 60 && side.h >= 60) DrawSide(c, side, host, *settings);
-        if (worker_.Busy()) c.RequestRedraw();  // (進み具合を動かす)
+        if (worker_.Busy() || host.playing) c.RequestRedraw();  // (進み具合を動かす・Play 中は動く者が動く)
     }
 
     void LoadState(const json::Value& s) override {
@@ -437,6 +438,7 @@ private:
             w::DrawMapLine(c, a.x, a.y, b.x, b.y, l.color);
         }
         DrawRoute(c, r, host, settings, v);
+        if (host.playing) DrawAgents(c, host, settings, v);
         ui::TextStyle ts;
         ts.size = 11;
         ts.color = theme::TextDim;
@@ -531,6 +533,78 @@ private:
         c.RequestRedraw();
     }
 
+    // Play 中の動く者: 道 (角の点) と体の丸・進む向き (見本 B)。
+    void DrawAgents(ui::Context& c, const SceneViewHost& host, const NavSettings& settings, const MapView& v) {
+        auto& scene = const_cast<Scene&>(host.scene);  // (Play 中のコピー。読むだけ)
+        const NavWorld* world = FindNavWorld(scene);
+        if (!world) return;
+        std::vector<Vec3> path;
+        std::vector<Vec2> pts;
+        for (const auto& [id, a] : world->Agents()) {
+            if (a.index < 0) continue;
+            const NavWorld::Mesh& m = world->Meshes()[static_cast<size_t>(a.mesh)];
+            if (m.crowd && a.hasTarget) {
+                m.crowd->Path(a.index, path);
+                pts.clear();
+                for (const Vec3& q : path) pts.push_back(v.ToScreen(q.x, q.z));
+                for (size_t i = 1; i < pts.size(); ++i) w::DrawMapLine(c, pts[i - 1].x, pts[i - 1].y, pts[i].x, pts[i].y, theme::NavRoute());
+            }
+            const game_production::SceneEntity* e = scene.Find(id);
+            const game_production::Component* comp = e ? e->FindComponent(reflect::TypeOf<NavAgent>().name) : nullptr;
+            const NavAgentType* t = comp && comp->Known() ? FindAgentType(settings, static_cast<const NavAgent*>(comp->value.Get())->agentType) : nullptr;
+            const Vec2 p = v.ToScreen(a.view.position.x, a.view.position.z);
+            w::DrawMapAgent(c, p.x, p.y, (t ? t->radius : 0.3f) * v.scale, a.view.velocity.x, -a.view.velocity.z);
+        }
+    }
+
+    // Play 中の動く者の一覧: 名前・状態・速さ・残り (見本 B)。下の y を返す。
+    float DrawAgentList(ui::Context& c, const Rect& r, const SceneViewHost& host) {
+        auto& scene = const_cast<Scene&>(host.scene);
+        const NavWorld* world = FindNavWorld(scene);
+        float y = r.y;
+        Label(c, {r.x, y, r.w, kRow}, Tr(L"動く者 (Play 中)"), true);
+        y += kRow + 2;
+        if (!world || world->Agents().empty()) {
+            Note(c, {r.x, y, r.w, 36}, Tr(L"「ナビの動く者」が付いた物がありません (スクリプトの rm::NavAgent で行き先を決めます)"));
+            return y + 40;
+        }
+        std::vector<std::pair<int, const NavWorld::Agent*>> list;
+        for (const auto& [id, a] : world->Agents()) list.push_back({id, &a});
+        std::sort(list.begin(), list.end(), [](const auto& p, const auto& q) { return p.first < q.first; });
+        const float rowH = kRow;
+        const float content = rowH * static_cast<float>(list.size());
+        const Rect box{r.x, y, r.w, std::min(content, std::max(rowH * 3, r.h * 0.3f))};
+        const float scroll = w::BeginScroll(c, "nav.agents", box, content);
+        ui::TextStyle ts;
+        ts.color = theme::Text;
+        ui::TextStyle dim;
+        dim.color = theme::TextDim;
+        dim.h = ui::HAlign::Right;
+        for (size_t i = 0; i < list.size(); ++i) {
+            const auto& [id, a] = list[i];
+            const Rect row{box.x, box.y - scroll + rowH * static_cast<float>(i), box.w, rowH};
+            const game_production::SceneEntity* e = scene.Find(id);
+            if (w::Selectable(c, std::format("nav.ag{}", id), row, std::find(host.selection.begin(), host.selection.end(), id) != host.selection.end()).clicked &&
+                host.select) {
+                host.select({id});
+            }
+            c.P().Text({row.x + 8, row.y, row.w * 0.4f, row.h}, e ? Utf8ToWide(e->data.name) : std::wstring(), ts);
+            const Vec3 vel = a->view.velocity;
+            const float speed = std::sqrt(vel.x * vel.x + vel.z * vel.z);
+            std::wstring state;
+            if (a->index < 0) state = Tr(L"ナビメッシュの外");
+            else if (a->stopped) state = Tr(L"止まっている");
+            else if (a->arrived) state = Tr(L"着いた");
+            else if (!a->hasTarget) state = Tr(L"行き先なし");
+            else if (a->pending || a->view.target == navigation::AgentView::Target::Pending) state = Tr(L"道を探している");
+            else if (a->view.target == navigation::AgentView::Target::Failed) state = Tr(L"行けない");
+            else state = TrF(L"{:.1f} m/s ・ 残り {:.1f} m{}", speed, a->remaining, a->view.partial ? Tr(L" (一番近い所まで)") : std::wstring());
+            c.P().Text({row.x + row.w * 0.4f, row.y, row.w * 0.6f - 8, row.h}, state, dim);
+        }
+        w::EndScroll(c, "nav.agents", box, content);
+        return box.Bottom() + 10;
+    }
+
     void ClearRoute() {
         hasA_ = hasB_ = false;
         routeNote_.clear();
@@ -575,6 +649,7 @@ private:
             y = DrawVolumeList(c, {r.x, y, r.w, r.Bottom() - y}, host);
             y = DrawBakeRow(c, {r.x, y, r.w, r.Bottom() - y}, host, settings);
         }
+        if (host.playing && r.Bottom() - y >= 60) y = DrawAgentList(c, {r.x, y, r.w, r.Bottom() - y}, host);
         if (r.Bottom() - y < 60) return;
         y = DrawAreaList(c, {r.x, y, r.w, r.Bottom() - y}, host, settings);
         if (r.Bottom() - y < 40) return;
