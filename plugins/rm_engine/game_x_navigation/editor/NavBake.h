@@ -23,6 +23,7 @@ struct BakeJob {
     std::map<std::string, std::filesystem::path> files;     // シーンが使うアセットの id -> ファイル
     std::filesystem::path out;                              // 書く .rmnav
     navigation::NavFileHead head;                           // 版・型・指紋 (書く前に前のファイルの知らないキーを足す)
+    bool partial = false;                                   // 変わった区画だけ焼き直す (前のファイルの区画を使う)
 };
 
 struct BakeOutcome {
@@ -35,6 +36,8 @@ struct BakeOutcome {
     navigation::NavFileHead head;
     size_t triangles = 0;  // 焼いた三角形の数
     double ms = 0;         // かかった時間
+    int bakedTiles = -1;   // 焼き直した区画の数 (-1: 全部)
+    bool partial = false;
 };
 
 // 作業スレッドで。`progress(済んだ区画, 全部)` はどのスレッドからも来る。

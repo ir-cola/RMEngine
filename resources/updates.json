@@ -3,6 +3,20 @@
   "format": 1,
   "updates": [
     {
+      "version": "0.0.49",
+      "date": "2026-11-28",
+      "items": [
+        {
+          "ja": "ナビゲーション (段階 4): 部品「つなぎの線」で、すき間や段差をつなげます (歩く・跳ぶ・スクリプトにまかせる)。「ナビのエリア」の「閉じている」で扉に、「ナビの障害物」は止まるとナビメッシュに穴をあけます",
+          "en": "Navigation (stage 4): the new Nav link component joins gaps and ledges (walk, jump, or leave it to a script). A Nav area's Closed makes it a door, and a Nav obstacle cuts a hole in the navmesh when it stops"
+        },
+        {
+          "ja": "「ナビ」タブに「変わった所だけ」(変わった区画だけ焼き直す) と、部品「ナビメッシュ」の「自動で焼き直す」。シーンビューで焼いた面をエリアの色で塗って見せます",
+          "en": "The Navigation tab gains \"Only what changed\" (rebakes only the changed tiles), and the NavMesh component gains \"Rebake automatically\". The scene view fills the baked faces in their area colors"
+        }
+      ]
+    },
+    {
       "version": "0.0.48",
       "date": "2026-11-28",
       "items": [

@@ -6,6 +6,8 @@
 //   ナビの形 (NavGeometry)              焼く物を変える: 入れない / 歩けない (壁だけ) / エリアを決める
 //   ナビのエリア (NavArea)              箱 / 円柱の中の床を、そのエリアにする (沼・道路・入ってはいけない所)
 //   ナビの動く者 (NavAgent)             ナビメッシュの上を行き先まで歩く (段階 2。スクリプトの RMNav.h で行き先を決める)
+//   つなぎの線 (NavLink)                ここから終わりへ「跳べる・降りられる・登れる」線 (段階 4。焼くときに入る)
+//   ナビの障害物 (NavObstacle)          置いた箱など。止まったら、まわりの区画を作り直して道から外す (段階 4)
 //
 // 型とエリアは番号 (id) で指す (並べ替えても消しても、ほかは変わらない。気候の種類と同じ)。部品の欄は
 // インスペクターのドロップダウン (ComponentLook::choices) で選ぶので、番号を文字で持つ ("1")。
@@ -67,6 +69,9 @@ struct NavMeshVolume {
     RM_PROPERTY(Edit, Label="コライダーを焼く", Tooltip="範囲の中の動かないコライダー (剛体の無い物・動き方が「動かない」の物) を焼く物に入れます") bool colliders = true;
     RM_PROPERTY(Edit, Label="焼いた物", Tooltip="「ナビ」タブの「焼く」で作るファイル (.rmnav)。シーンと一緒に保存され、書き出したゲームに入ります", AssetKind=".rmnav")
     AssetRef baked;
+    RM_PROPERTY(Edit, Label="動く障害物を使う", Tooltip="「ナビの障害物」が止まったら、ゲームの中でまわりの区画を作り直して穴をあけます (焼いた物が大きくなります。変えたら焼き直す)")
+    bool obstacles = false;
+    RM_PROPERTY(Edit, Label="自動で焼き直す", Tooltip="形を変えて 1 秒たつと、変わった区画だけを焼き直します (「ナビ」タブを開いている間)") bool autoBake = false;
 };
 
 RM_ENUM(Label="ナビでの扱い")
@@ -95,6 +100,46 @@ struct NavArea {
     RM_PROPERTY(Edit, Label="形", Tooltip="円柱は縦 (Y) が高さ") NavAreaShape shape = NavAreaShape::Box;
     RM_PROPERTY(Edit, Label="大きさ (m)", Tooltip="箱: 幅・高さ・奥行き / 円柱: X が直径、Y が高さ。Transform の大きさを掛けます", Min=0.01, Max=100000) Vec3 size{4, 2, 4};
     RM_PROPERTY(Edit, Label="エリア", Tooltip="中の床にするエリアの種類") std::string area = "1";
+    RM_PROPERTY(Edit, Label="閉じている", Tooltip="扉: 中を通りません (焼き直さずにすぐ効きます。スクリプトの rm::Nav::SetAreaClosed でも開け閉めできます)") bool closed = false;
+};
+
+RM_ENUM(Label="渡り方")
+enum class NavLinkMove {
+    RM_ITEM(Label="歩く") Walk,
+    RM_ITEM(Label="跳ぶ") Jump,
+    RM_ITEM(Label="スクリプトにまかせる") Script,
+};
+
+// つなぎの線: このエンティティの位置 (始め) から終わりへ。焼くとナビメッシュに入る (Detour のオフメッシュリンク)。
+// 動く者は線の始めに来ると、渡り方に従う: 歩く (まっすぐ)・跳ぶ (放物線)・スクリプトにまかせる (イベント NavLink を送って
+// 待つ。スクリプトが rm::NavAgent::CompleteLink() を呼ぶと、終わりへ移って続ける)。
+RM_STRUCT(Label="つなぎの線")
+struct NavLink {
+    RM_PROPERTY(Edit, Label="終わり (ずれ)", Tooltip="始め (このエンティティの位置) から見た終わり。Transform の向きと大きさを掛けます") Vec3 end{0, 0, 3};
+    RM_PROPERTY(Edit, Label="終わりの物", Tooltip="入れると、その物の位置が終わり (上の「ずれ」は使いません)") EntityRef endEntity;
+    RM_PROPERTY(Edit, Label="両方向", Tooltip="外すと、始めから終わりへだけ (飛び降りるだけの段差など)") bool bothWays = true;
+    RM_PROPERTY(Edit, Label="幅 (m)", Tooltip="始めと終わりの、ナビメッシュにつながる丸の直径", Min=0.1, Max=100, Step=0.1, Decimals=2) float width = 1.f;
+    RM_PROPERTY(Edit, Label="エリア", Tooltip="この線を通る費用はこのエリアのもの") std::string area = "0";
+    RM_PROPERTY(Edit, Label="渡り方") NavLinkMove move = NavLinkMove::Walk;
+    RM_PROPERTY(Edit, Label="跳ぶ高さ (m)", Tooltip="始めと終わりを結ぶ線から、一番高い所までの高さ", Min=0, Max=100, Step=0.1, Decimals=2, ShowIf="move=Jump") float jumpHeight = 1.f;
+    RM_PROPERTY(Edit, Label="使える", Tooltip="外すと、この線を通る道を探しません (焼き直しません。スクリプトの rm::Nav::SetLinkEnabled でも)") bool enabled = true;
+};
+
+RM_ENUM(Label="障害物の形")
+enum class NavObstacleShape {
+    RM_ITEM(Label="円柱") Cylinder,
+    RM_ITEM(Label="箱") Box,
+};
+
+// ナビの障害物: 動いている間は動く者がよける相手。止まって「止まったと見る時間」がたつと、まわりの区画を作り直して穴をあける
+// (焼いたナビメッシュの「動く障害物を使う」が入っているときだけ)。動き出すと穴を閉じる。
+RM_STRUCT(Label="ナビの障害物")
+struct NavObstacle {
+    RM_PROPERTY(Edit, Label="形") NavObstacleShape shape = NavObstacleShape::Box;
+    RM_PROPERTY(Edit, Label="大きさ (m)", Tooltip="箱: 幅・高さ・奥行き / 円柱: X が直径、Y が高さ。Transform の大きさを掛けます。エンティティの位置が真ん中", Min=0.05, Max=10000)
+    Vec3 size{1, 1, 1};
+    RM_PROPERTY(Edit, Label="止まったら穴をあける", Tooltip="外すと、よける相手になるだけ") bool carve = true;
+    RM_PROPERTY(Edit, Label="止まったと見る時間 (秒)", Min=0, Max=60, Step=0.1, Decimals=1) float stillTime = 0.5f;
 };
 
 RM_ENUM(Label="よけ方")

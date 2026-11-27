@@ -68,6 +68,8 @@ std::vector<Vec2> Hull(std::vector<Vec2> pts) {
 }
 
 // 部品「ナビのエリア」-> エリアの柱 (形の角をワールドへ。真上から見た凸包と、高さの範囲)。
+}  // namespace
+
 std::optional<navigation::NavAreaVolume> AreaVolumeOf(const NavArea& a, const space3d::Mat4& world) {
     std::vector<Vec3> local;
     const Vec3 h{std::fabs(a.size.x) * 0.5f, std::fabs(a.size.y) * 0.5f, std::fabs(a.size.z) * 0.5f};
@@ -98,6 +100,8 @@ std::optional<navigation::NavAreaVolume> AreaVolumeOf(const NavArea& a, const sp
     if (v.outline.empty() || !(v.maxY > v.minY)) return std::nullopt;
     return v;
 }
+
+namespace {
 
 bool SourceOn(const NavSourceInfo& s, const NavMeshVolume& v) {
     const std::string_view id = s.id ? s.id : "";
@@ -156,6 +160,12 @@ std::vector<NavAreaKind> DefaultAreaKinds() {
     out[2].id = 2, out[2].name = "立入禁止", out[2].color = AreaKindColor(2), out[2].blocked = true;
     return out;
 }
+
+namespace {
+bool gFillInSceneView = true;
+}  // namespace
+bool FillInSceneView() { return gFillInSceneView; }
+void SetFillInSceneView(bool on) { gFillInSceneView = on; }
 
 Color AreaKindColor(size_t n) {
     // (データの色: ユーザーが変える。テーマの色ではない)
@@ -311,7 +321,35 @@ bool CollectInput(const Scene& scene, const Worlds& worlds, const NavVolume& vol
         if (!a) continue;
         if (auto v = AreaVolumeOf(*a, WorldOf(worlds, t.entity->data.id))) out.volumes.push_back(std::move(*v));
     }
+    // つなぎの線: 始めか終わりが範囲の近くにある物 (使えるかどうかはゲームの中で変える: ここでは全部入れる)。
+    for (const navigation::NavLinkInput& l : LinksOf(scene, worlds)) {
+        auto in = [&](Vec3 p) { return p.x >= near.min.x && p.x <= near.max.x && p.y >= near.min.y && p.y <= near.max.y && p.z >= near.min.z && p.z <= near.max.z; };
+        if (in(l.a) || in(l.b)) out.links.push_back(l);
+    }
     return !stop.stop_requested();
+}
+
+std::vector<navigation::NavLinkInput> LinksOf(const Scene& scene, const Worlds& worlds) {
+    std::vector<navigation::NavLinkInput> out;
+    for (const game_production::TreeEntry& t : scene.TreeOrder()) {
+        if (!t.activeInHierarchy) continue;
+        const NavLink* l = Find<NavLink>(*t.entity);
+        if (!l) continue;
+        const space3d::Mat4 world = WorldOf(worlds, t.entity->data.id);
+        navigation::NavLinkInput in;
+        in.a = {world.m[3][0], world.m[3][1], world.m[3][2]};
+        in.b = space3d::TransformPoint(world, l->end);
+        if (!l->endEntity.Empty() && scene.Find(static_cast<int>(l->endEntity.id))) {
+            const space3d::Mat4 to = WorldOf(worlds, static_cast<int>(l->endEntity.id));
+            in.b = {to.m[3][0], to.m[3][1], to.m[3][2]};
+        }
+        in.radius = std::max(0.05f, (std::isfinite(l->width) ? l->width : 1.f) * 0.5f);
+        in.both = l->bothWays;
+        in.area = AreaCodeOf(l->area);
+        in.id = static_cast<uint32_t>(t.entity->data.id);
+        out.push_back(in);
+    }
+    return out;
 }
 
 void AddMeshTo(NavShape& out, std::span<const Vec3> local, std::span<const uint32_t> indices, const space3d::Mat4& world) {
@@ -346,6 +384,7 @@ uint64_t Fingerprint(const Scene& scene, const Worlds& worlds, const NavVolume& 
     for (const float f : {volume.bounds.min.x, volume.bounds.min.y, volume.bounds.min.z, volume.bounds.max.x, volume.bounds.max.y, volume.bounds.max.z}) h.Float(f);
     h.Int(volume.volume.meshes ? 1 : 0);
     h.Int(volume.volume.colliders ? 1 : 0);
+    h.Int(volume.volume.obstacles ? 1 : 0);
     // (口ごとに別に数え、名前の順に混ぜる: プラグインを読んだ順・何も読まなかった口に左右されない)
     std::vector<std::pair<std::string, uint64_t>> parts;
     const uint64_t nothing = navigation::Hasher{}.Value();
@@ -360,12 +399,33 @@ uint64_t Fingerprint(const Scene& scene, const Worlds& worlds, const NavVolume& 
         h.Text(id);
         h.Int(static_cast<int64_t>(value));
     }
-    const std::string geometry = reflect::TypeOf<NavGeometry>().name, area = reflect::TypeOf<NavArea>().name;
+    const std::string geometry = reflect::TypeOf<NavGeometry>().name, area = reflect::TypeOf<NavArea>().name, link = reflect::TypeOf<NavLink>().name;
     for (const game_production::TreeEntry& t : scene.TreeOrder()) {
         h.Int(t.entity->data.id);
         h.Int(t.activeInHierarchy ? 1 : 0);
         for (const Component& c : t.entity->components) {
-            if (c.type == geometry || c.type == area) HashComponent(h, *t.entity, c, worlds);
+            if (c.type == geometry) HashComponent(h, *t.entity, c, worlds);
+            // (扉の「閉じている」と線の「使える」はゲームの中で変える物: 焼き直しは要らないので指紋に入れない)
+            if (c.type == area && c.Known()) {
+                NavArea copy = *static_cast<const NavArea*>(c.value.Get());
+                copy.closed = false;
+                Component cc = c;
+                *static_cast<NavArea*>(cc.value.Get()) = copy;
+                HashComponent(h, *t.entity, cc, worlds);
+            }
+            if (c.type == link && c.Known()) {
+                NavLink copy = *static_cast<const NavLink*>(c.value.Get());
+                copy.enabled = true;
+                Component cc = c;
+                *static_cast<NavLink*>(cc.value.Get()) = copy;
+                HashComponent(h, *t.entity, cc, worlds);
+                if (!copy.endEntity.Empty()) {  // (終わりの物が動いても古い)
+                    const space3d::Mat4 to = WorldOf(worlds, static_cast<int>(copy.endEntity.id));
+                    for (const auto& col : to.m) {
+                        for (const float f : col) h.Float(f);
+                    }
+                }
+            }
         }
     }
     return h.Value();

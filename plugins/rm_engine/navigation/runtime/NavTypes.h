@@ -23,6 +23,9 @@ namespace rm::navigation {
 
 inline constexpr uint8_t kAreaNone = 0;     // 歩けない
 inline constexpr uint8_t kAreaNormal = 63;  // ふつう
+// 焼くときだけ: エリアの柱の中に付ける印 (エリアの番号 | これ)。柱ごとに別の多角形になる (扉を閉じると、その多角形だけ
+// 通れなくなる)。Detour の多角形のエリアは下の 6 ビットだけなので、焼いた物には残らない。
+inline constexpr uint8_t kAreaApart = 0x40;
 inline constexpr int kMaxAreaKinds = 62;    // 1 .. 62
 
 // ワールドの軸に沿った箱。
@@ -49,7 +52,18 @@ struct NavAreaVolume {
     uint8_t area = kAreaNormal;
 };
 
+// つなぎの線 (Detour のオフメッシュリンク): a から b へ (両方向なら b から a へも) 跳べる・歩ける線。
+struct NavLinkInput {
+    Vec3 a{0, 0, 0}, b{0, 0, 0};
+    float radius = 0.5f;          // 始めと終わりを探す丸の半径
+    bool both = true;             // 両方向
+    uint8_t area = kAreaNormal;
+    uint32_t id = 0;              // 持ち主 (エンティティの id など。道を探して通ったときに分かる)
+    bool operator==(const NavLinkInput&) const = default;
+};
+
 struct NavInput {
+    std::vector<NavLinkInput> links;
     std::vector<Vec3> points;
     std::vector<uint32_t> indices;  // 三角形ごとに 3 つ。表は外から見て反時計回り (エンジンの決まり)
     std::vector<uint8_t> areas;     // 三角形ごと (上の番号)
@@ -64,10 +78,12 @@ struct NavInput {
     }
 };
 
-// 焼いた区画 1 つ (Detour の dtCreateNavMeshData が作るバイト列そのまま)。
+// 焼いた区画 1 つ: Detour の dtCreateNavMeshData が作るバイト列そのまま。動く障害物を使う範囲は、DetourTileCache の
+// 層 (高さの層ごと: 橋の上と下) も持つ (ゲームの中で、障害物の所だけ区画を作り直すため)。
 struct NavTile {
     int x = 0, z = 0;
     std::string data;
+    std::vector<std::string> layers;
     bool operator==(const NavTile&) const = default;
 };
 
@@ -76,8 +92,12 @@ struct NavData {
     NavAgent agent;          // 焼いたときの体の形
     float tileSize = 0;      // 区画の一辺 (m)
     int tilesX = 0, tilesZ = 0;
+    int tileCells = 64;      // 区画の一辺のマスの数
     int maxPolysPerTile = 0; // 一番多い区画の多角形の数 (読むときに Detour に伝える)
     std::vector<NavTile> tiles;  // 歩ける所のある区画だけ。z、x の順
+    std::vector<NavLinkInput> links;  // 焼いたつなぎの線
+    std::vector<uint64_t> prints;     // 区画ごとの指紋 (z、x の順に全部の区画: 変わった所だけ焼き直すため)
+    bool obstacles = false;           // 動く障害物を使う (区画が層を持つ)
 
     bool Empty() const { return tiles.empty(); }
 };

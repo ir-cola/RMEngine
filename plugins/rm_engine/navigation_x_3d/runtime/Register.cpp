@@ -3,7 +3,9 @@
 #include "base/Log.h"
 #include "base/Utf.h"
 #include "rm_engine/game_x_3d/runtime/MeshRenderer.h"
+#include "rm_engine/game_x_3d/runtime/WorldDraw.h"
 #include "rm_engine/game_x_navigation/runtime/NavScene.h"
+#include "rm_engine/navigation_x_3d/runtime/NavFill.h"
 #include "rm_engine/space3d/runtime/MeshBake.h"
 #include "rm_engine/space3d/runtime/MeshFile.h"
 #include "rm_engine/space3d/runtime/Primitives.h"
@@ -129,6 +131,9 @@ void RegisterRuntime(RuntimeRegistry& registry) {
     // 焼く物「メッシュ」: 部品「ナビメッシュ」の「メッシュを焼く」で切り替える (欄の名前 meshes)。
     static const game_x_navigation::NavSourceInfo kMeshes{"meshes", "メッシュ", "3d", &CollectMeshes, &MeshPrint};
     registry.Contribute(game_x_navigation::kNavSourcePoint, kMeshes);
+    // シーンビューに焼いたナビメッシュの面を塗る (NavFill.h)。
+    static const game_x_3d::WorldDrawInfo kFill{&CreateNavFill};
+    registry.Contribute(game_x_3d::kWorldDrawPoint, kFill);
 }
 
 }  // namespace rm::navigation_x_3d

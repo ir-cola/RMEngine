@@ -19,10 +19,14 @@
 //   rm::Vec3 p  = rm::Nav::ClosestPoint(clicked);
 //   rm::Vec3 r  = rm::Nav::RandomPoint(center, 10.0f);
 //   rm::Nav::SetAreaCost("沼", 5.0f);                // エリアの費用をゲームの中で変える
-//   rm::Nav::SetAreaOpen("立入禁止", true);          // 通れないエリアを通れるように (扉)
+//   rm::Nav::SetAreaOpen("立入禁止", true);          // 通れないエリアの種類を通れるように
+//   rm::Nav::SetAreaClosed(door, true);              // 部品「ナビのエリア」の物を閉じる (扉。焼き直さない)
+//   rm::Nav::SetLinkEnabled(ladder, false);          // 部品「つなぎの線」の物を使えなくする
+//   agent.CompleteLink();                            // 「スクリプトにまかせる」線を渡り終えた (終わりへ移って続ける)
 //
 //   void Enemy::OnEvent(rm::Entity self, const rm::Event& e) {
 //       if (e.Is("NavArrived")) { ... }              // 着いた (動く者のエンティティへ)
+//       if (e.Is("NavLink")) { ... }                 // 「スクリプトにまかせる」線の始めに来た (e.text: 線の名前・e.entity: 線)
 //   }
 //
 // ナビメッシュは最初の固定の刻みで読むので、BeginPlay の中ではまだ道を探せない (行き先は覚えておく: 頼んでよい)。
@@ -39,7 +43,17 @@ namespace rm {
 namespace Nav {
 namespace detail {
 inline const RmNavApi* Api() { return Part<RmNavApi>(RM_PART_NAV, RM_PART_NAV_VERSION); }
+inline const RmNavApi2* Api2() { return Part<RmNavApi2>(RM_PART_NAV, RM_PART_NAV_VERSION2); }
 }  // namespace detail
+
+inline bool SetAreaClosed(Entity area, bool closed) {
+    const RmNavApi2* api = detail::Api2();
+    return api && api->setAreaClosed(rm::Api()->ctx, area.id, closed ? 1 : 0) != 0;
+}
+inline bool SetLinkEnabled(Entity link, bool enabled) {
+    const RmNavApi2* api = detail::Api2();
+    return api && api->setLinkEnabled(rm::Api()->ctx, link.id, enabled ? 1 : 0) != 0;
+}
 
 // 道 (角の点。始めと終わりを含む)。行き先まで行けないときも、一番近い所までの道で true (`partial` が true)。
 inline bool FindPath(Vec3 a, Vec3 b, std::vector<Vec3>& out, bool* partial = nullptr) {
@@ -110,6 +124,10 @@ public:
         const RmNavApi* api = Nav::detail::Api();
         const float f[3] = {p.x, p.y, p.z};
         return api && api->warp(rm::Api()->ctx, e_.id, f) != 0;
+    }
+    bool CompleteLink() const {
+        const RmNavApi2* api = Nav::detail::Api2();
+        return api && api->completeLink(rm::Api()->ctx, e_.id) != 0;
     }
     bool OnMesh() const { return State().onMesh != 0; }
     bool HasPath() const { return State().hasPath != 0; }

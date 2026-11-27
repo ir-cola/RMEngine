@@ -6,6 +6,7 @@
 
 namespace rm::game_x_navigation {
 
-const game_production::ScriptApiPart& ScriptNavPart();
+const game_production::ScriptApiPart& ScriptNavPart();   // 版 1
+const game_production::ScriptApiPart& ScriptNavPart2();  // 版 2 (つなぎの線と扉。RMNav.h の今の物)
 
 }  // namespace rm::game_x_navigation

@@ -1393,10 +1393,28 @@ plugins/            ソフトはプラグインで足す (いまは「ゲーム�
 - **描く物を集める所を 1 本に** — シーンビュー・ゲームビュー・書き出したゲームが、同じ関数 (`game_x_2d/runtime/World2D`) でスプライトを置き、ほかのプラグインの描く物 (口 `rm_engine.game_x_2d.world_draw`) と 1 本の列にして、(ワールドの並び順・自分の並び順・階層の順) で並べる。だからキャラクターを層の間に挟める
 - **どこ** — `plugins/rm_engine/tilemap/runtime/` (`TileCell.h`・`TileStore.*`・`TilePaint.*`・`Tileset.*`)・`game_x_tilemap/runtime/TileDraw.*` (束)・`game_x_tilemap/editor/` (`TileTool`・`TilePanel`・`TileEdit`)・`space2d/runtime/Renderer2D.*` (`SpriteDraw::batch`)・`space2d/runtime/Atlas.*` (`GridCellOf`: 余白と間)・`src/core/paint/` (`Runs`・`GridPaint`)、`tests/TestTilemap.cpp`
 
+### つなぎの線・扉・止まったら穴 (DetourTileCache)・変わった区画だけ焼く・面を塗る (2026-11-28)
+
+- **何か** — **オフメッシュリンク**: ナビメッシュの面の外を通る 2 点の線 (始め・終わり・半径・向き)。Detour は線を 1 つの「多角形」として持ち、
+  始めと終わりを近くの面につなぐので、道探し (A*) はふつうに通る。群れは線の上をまっすぐ動かす (その間の動きは使う側が決めてよい)。
+  **DetourTileCache**: 区画ごとに「層」(高さと歩けるかの 2D の地図) を持っておき、障害物 (円柱・箱) を足すと、その区画の層に穴を描いてから
+  ナビメッシュの区画だけを作り直す (速い。1 刻みの数に上限)。**リージョンを分ける印**: Recast は同じエリアの番号の所を 1 つのリージョンにまとめるので、
+  柱の中に別の番号を付けて分け、多角形にした後で番号を戻す (Detour のエリアは下の 6 ビットだけ)。**区画ごとの指紋**: 区画に効く入力 (まわりの三角形・
+  柱・線・体の形) だけのハッシュ。同じなら前の区画をそのまま使う
+- **何に使っているか** — 部品「つなぎの線」(歩く・跳ぶ = 放物線 4ht(1−t) を見た目に足す・スクリプトにまかせる = 手前で止めてイベント)、
+  扉 (閉じた柱の中に真ん中がある多角形の印を通れないに)、「ナビの障害物」(止まったら穴・動いている間は速さ 0 の群れの者)、
+  「変わった所だけ」と「自動で焼き直す」、シーンビューの塗り (Direct3D 11 の半透明の三角形: アルファブレンド・深度テストあり・書かない)
+- **なぜそれか** — 扉と線の「使える」は多角形の印だけで済むので、焼き直さずにすぐ効く。障害物を毎刻み作り直すと重いので、止まった物だけ穴に。
+  指紋で区画を選ぶと、全部焼いた物と同じバイトになる (テストで確かめられる)
+- **どこ** — `plugins/rm_engine/navigation/runtime/Bake.cpp` (指紋・層・線)・`Query.cpp` (層から作る・障害物・扉・線の印)・`DetourShared.h`・`NavFile.cpp` (`TCLY`・`LINK`)・
+  `Crowd.cpp` (線の先読み)、`game_x_navigation/runtime/NavWorld.cpp` (跳ぶ・待つ・障害物)・`ScriptNav.cpp` (版 2)・`editor/NavTab.cpp`・`NavLines.cpp`、
+  `navigation_x_3d/runtime/NavFill.cpp`、`tests/TestNavigation.cpp`
+
 ## 追記の記録
 
 | 日付 | 足したこと |
 |---|---|
+| 2026-11-28 | つなぎの線 (オフメッシュリンク)・扉 (リージョンを分ける印)・止まったら穴 (DetourTileCache)・区画ごとの指紋で変わった所だけ焼く・シーンビューの半透明の塗り |
 | 2026-11-28 | 使っているクリップだけ書き出す (.rmclip・JSON の文字列とスクリプトの "名前" で使っているかを見る) |
 | 2026-11-28 | クリップの圧縮 (48 ビットの回転・16 ビットの範囲・骨の先の誤差で鍵を選ぶ・atan2 で回転の違いを測る)・焼いたモデルのチャンク CPAK |
 | 2026-11-28 | Compute Shader のスキニング (1 本の置き場所・SV_VertexID で読む・まとめ描きのまま)・ComPtr の & の落とし穴・性能の高い GPU を選ぶ (EnumAdapterByGpuPreference) |

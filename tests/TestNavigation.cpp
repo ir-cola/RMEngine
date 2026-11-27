@@ -275,7 +275,8 @@ Scene NavScene() {
     s.SetSettingTypes({&reflect::TypeOf<NavSettings>()});
     s.SetComponentTypes({&reflect::TypeOf<space3d::Transform>(), &reflect::TypeOf<game_x_3d::MeshRenderer>(), &reflect::TypeOf<NavMeshVolume>(),
                          &reflect::TypeOf<NavGeometry>(), &reflect::TypeOf<NavArea>(), &reflect::TypeOf<physics::Rigidbody>(),
-                         &reflect::TypeOf<physics::Collider>(), &reflect::TypeOf<NavAgent>()});
+                         &reflect::TypeOf<physics::Collider>(), &reflect::TypeOf<NavAgent>(), &reflect::TypeOf<NavLink>(),
+                         &reflect::TypeOf<NavObstacle>()});
     return s;
 }
 
@@ -796,4 +797,339 @@ RM_TEST(NavBodyFromTheCharacter) {
     // キャラクターのある物は、ナビ × 物理の mover が持つ (order 0)。
     const auto movers = reg.Contributions<NavMoverInfo>(kNavMoverPoint);
     CHECK(movers.size() == 1 && movers[0].item->owns(s, id) && !movers[0].item->owns(s, other) && movers[0].item->order == 0);
+}
+
+// --- 段階 4: つなぎの線・扉・ナビの障害物・変わった所だけ焼く (docs/NAVIGATION.md 15 章) ----------------------
+
+RM_TEST(NavLinkCrossesAGap) {
+    // 間が 2 m あいた 2 枚の床 (x -10 .. -1 と 1 .. 10)。
+    NavInput in;
+    AddShape(in, space3d::Shape::Plane, {0.9f, 1, 1}, {-5.5f, 0, 0});
+    AddShape(in, space3d::Shape::Plane, {0.9f, 1, 1}, {5.5f, 0, 0});
+    NavMesh none;
+    CHECK(none.Load(BakeOk(in, Options({-11, -1, -6}, {11, 3, 6})), nullptr));
+    CHECK(none.FindPath({-6, 0, 0}, {6, 0, 0}).status == NavPath::Status::Partial);  // 渡れない
+    NavLinkInput l;
+    l.a = {-1.5f, 0, 0}, l.b = {2.5f, 0, 0};  // (終わりは床の上。区画の境目 x = 1.8 の向こう)
+    l.id = 7;
+    in.links.push_back(l);
+    const NavData d = BakeOk(in, Options({-11, -1, -6}, {11, 3, 6}));
+    CHECK(d.links.size() == 1);
+    NavMesh mesh;
+    CHECK(mesh.Load(d, nullptr));
+    CHECK(mesh.Links().size() == 1 && mesh.Links()[0].id == 7);
+    CHECK(mesh.FindPath({-6, 0, 0}, {6, 0, 0}).status == NavPath::Status::Found);
+    CHECK(mesh.FindPath({6, 0, 0}, {-6, 0, 0}).status == NavPath::Status::Found);  // 両方向
+    mesh.SetLinkEnabled(7, false);
+    CHECK(mesh.FindPath({-6, 0, 0}, {6, 0, 0}).status == NavPath::Status::Partial);
+    mesh.SetLinkEnabled(7, true);
+    CHECK(mesh.FindPath({-6, 0, 0}, {6, 0, 0}).status == NavPath::Status::Found);
+    // 片方向: 戻れない。
+    in.links[0].both = false;
+    NavMesh one;
+    CHECK(one.Load(BakeOk(in, Options({-11, -1, -6}, {11, 3, 6})), nullptr));
+    CHECK(one.FindPath({-6, 0, 0}, {6, 0, 0}).status == NavPath::Status::Found);
+    CHECK(one.FindPath({6, 0, 0}, {-6, 0, 0}).status == NavPath::Status::Partial);
+}
+
+RM_TEST(NavClosedDoorBlocks) {
+    NavInput in;
+    Floor(in, 20, 10);
+    NavAreaVolume door;  // 奥行きいっぱいの扉 (ふつうのエリア: 柱ごとに別の多角形になる)
+    door.outline = {{-1, -6}, {1, -6}, {1, 6}, {-1, 6}};
+    door.minY = -1, door.maxY = 2;
+    in.volumes.push_back(door);
+    NavMesh mesh;
+    CHECK(mesh.Load(BakeOk(in, Options({-11, -1, -6}, {11, 3, 6})), nullptr));
+    CHECK(mesh.FindPath({-8, 0, 0}, {8, 0, 0}).status == NavPath::Status::Found);
+    mesh.SetClosedVolumes({door});
+    CHECK(mesh.FindPath({-8, 0, 0}, {8, 0, 0}).status == NavPath::Status::Partial);
+    mesh.SetClosedVolumes({});
+    CHECK(mesh.FindPath({-8, 0, 0}, {8, 0, 0}).status == NavPath::Status::Found);
+    // 焼いた多角形のエリアは、ふつうのまま (柱の印は残らない)。
+    std::vector<NavPolygon> polys;
+    mesh.PolygonsOf(polys);
+    bool allNormal = !polys.empty();
+    for (const NavPolygon& p : polys) allNormal = allNormal && p.area == kAreaNormal;
+    CHECK(allNormal);
+}
+
+RM_TEST(NavPartialRebakeIsTheSameAsAFullBake) {
+    NavInput in;
+    Floor(in, 20, 20);
+    AddShape(in, space3d::Shape::Box, {1, 2, 6}, {-5, 1, -5});
+    const BakeOptions o = Options({-11, -1, -11}, {11, 4, 11});
+    const NavData first = BakeOk(in, o);
+    CHECK(first.tilesX == 2 && first.tilesZ == 2 && first.prints.size() == 4);
+    // 何も変えない: 1 つも焼かない。
+    BakeOptions again = o;
+    again.previous = &first;
+    int baked = -1;
+    again.bakedTiles = &baked;
+    NavFileHead h;
+    h.engine = "0.0.0";
+    CHECK(WriteNavFile(BakeOk(in, again), h) == WriteNavFile(first, h));
+    CHECK(baked == 0);
+    // 隅に箱を足す: その区画だけ焼き直し、全部焼いたものと同じバイト。
+    AddShape(in, space3d::Shape::Box, {1, 2, 1}, {8, 1, 8});
+    const NavData full = BakeOk(in, o);
+    const NavData part = BakeOk(in, again);
+    CHECK(baked == 1);
+    CHECK(WriteNavFile(part, h) == WriteNavFile(full, h));
+    CHECK(WriteNavFile(full, h) != WriteNavFile(first, h));
+    // 区画の形が違う (細かさを変えた) ときは全部焼く。
+    BakeOptions finer = Options({-11, -1, -11}, {11, 4, 11}, 0.25f);
+    finer.previous = &first;
+    finer.bakedTiles = &baked;
+    const NavData f = BakeOk(in, finer);
+    CHECK(baked == f.tilesX * f.tilesZ);
+}
+
+RM_TEST(NavObstacleCarvesAHole) {
+    NavInput in;
+    Floor(in, 20, 10);
+    BakeOptions o = Options({-11, -1, -6}, {11, 3, 6});
+    o.obstacles = true;
+    const NavData d = BakeOk(in, o);
+    CHECK(d.obstacles);
+    // ファイルを往復しても (区画は層で持つ)。
+    NavFileHead h;
+    const std::string bytes = WriteNavFile(d, h);
+    const auto back = ReadNavFile(bytes, nullptr, nullptr);
+    CHECK(back.has_value());
+    if (!back) return;
+    CHECK(back->obstacles && WriteNavFile(*back, h) == bytes);
+    NavMesh mesh;
+    CHECK(mesh.Load(*back, nullptr));
+    CHECK(mesh.HasObstacles());
+    auto settle = [&] {
+        for (int i = 0; i < 64 && mesh.UpdateObstacles(1.f / 60, 4); ++i) {
+        }
+    };
+    const NavPath straight = mesh.FindPath({-8, 0, 0}, {8, 0, 0});
+    CHECK(straight.status == NavPath::Status::Found && straight.length < 16.5f);
+    // 真ん中の小さな箱: よけて回る。
+    NavMesh::Obstacle small;
+    small.box = true, small.center = {0, 1, 0}, small.half = {0.5f, 1, 1.5f};
+    const uint32_t a = mesh.AddObstacle(small);
+    CHECK(a != 0);
+    settle();
+    const NavPath around = mesh.FindPath({-8, 0, 0}, {8, 0, 0});
+    CHECK(around.status == NavPath::Status::Found && around.length > 16.2f);
+    // 奥行きいっぱいの箱: 渡れない。消すと元どおり。
+    NavMesh::Obstacle wall;
+    wall.box = true, wall.center = {0, 1, 0}, wall.half = {0.5f, 1, 6};
+    const uint32_t b = mesh.AddObstacle(wall);
+    settle();
+    CHECK(mesh.FindPath({-8, 0, 0}, {8, 0, 0}).status == NavPath::Status::Partial);
+    mesh.RemoveObstacle(b);
+    mesh.RemoveObstacle(a);
+    settle();
+    const NavPath again = mesh.FindPath({-8, 0, 0}, {8, 0, 0});
+    CHECK(again.status == NavPath::Status::Found && again.length < 16.5f);
+    // 障害物を使わない焼いた物には足せない。
+    NavMesh plain;
+    CHECK(plain.Load(BakeOk(in, Options({-11, -1, -6}, {11, 3, 6})), nullptr));
+    CHECK(!plain.HasObstacles() && plain.AddObstacle(small) == 0);
+}
+
+RM_TEST(NavLinkFileRoundTrip) {
+    NavInput in;
+    AddShape(in, space3d::Shape::Plane, {0.9f, 1, 1}, {-5.5f, 0, 0});
+    AddShape(in, space3d::Shape::Plane, {0.9f, 1, 1}, {5.5f, 0, 0});
+    NavLinkInput l;
+    l.a = {-1.5f, 0, 1}, l.b = {2.5f, 0, -1}, l.radius = 0.7f, l.both = false, l.area = 1, l.id = 42;
+    in.links.push_back(l);
+    for (const bool obstacles : {false, true}) {
+        BakeOptions o = Options({-11, -1, -6}, {11, 3, 6});
+        o.obstacles = obstacles;
+        const NavData d = BakeOk(in, o);
+        NavFileHead h;
+        const std::string bytes = WriteNavFile(d, h);
+        const auto back = ReadNavFile(bytes, nullptr, nullptr);
+        CHECK(back.has_value());
+        if (!back) continue;
+        CHECK(back->links == d.links && back->prints == d.prints && back->tileCells == d.tileCells);
+        CHECK(WriteNavFile(*back, h) == bytes);
+        NavMesh mesh;
+        CHECK(mesh.Load(*back, nullptr));
+        CHECK(mesh.FindPath({-6, 0, 0}, {6, 0, 0}).status == NavPath::Status::Found);  // 層から作っても線はつながる
+    }
+}
+
+RM_TEST(NavJumpLiftIsAnArc) {
+    CHECK(Near(JumpLift(2, 0), 0) && Near(JumpLift(2, 1), 0));
+    CHECK(Near(JumpLift(2, 0.5f), 2));
+    CHECK(JumpLift(2, 0.25f) > 1 && JumpLift(2, 0.25f) < 2);
+    CHECK(Near(JumpLift(2, -1), 0) && Near(JumpLift(2, 3), 0));
+}
+
+namespace {
+
+// 間のあいた 2 枚の床とつなぎの線 1 本のシーンを焼いて再生する。
+struct LinkPlay {
+    Scene scene = NavScene();
+    std::string baked;
+    game_production::AssetAccess assets;
+    RuntimeRegistry reg;
+    std::vector<game_production::SystemEvent> events;
+    int agent = 0, link = 0, door = 0, volume = 0;
+
+    LinkPlay(NavLinkMove move, bool withDoor = false) {
+        scene.SetComponentTypes({&reflect::TypeOf<space3d::Transform>(), &reflect::TypeOf<game_x_3d::MeshRenderer>(), &reflect::TypeOf<NavMeshVolume>(),
+                                 &reflect::TypeOf<NavArea>(), &reflect::TypeOf<NavAgent>(), &reflect::TypeOf<NavLink>(), &reflect::TypeOf<NavObstacle>()});
+        PutShape(scene, "床 1", game_x_3d::MeshShape::Plane, {-5.5f, 0, 0}, {0.9f, 1, 1});
+        PutShape(scene, "床 2", game_x_3d::MeshShape::Plane, {5.5f, 0, 0}, {0.9f, 1, 1});
+        volume = scene.Create("1階");
+        AddTo<space3d::Transform>(scene, volume).position = {0, 1, 0};
+        AddTo<NavMeshVolume>(scene, volume).size = {22, 6, 12};
+        link = scene.Create("橋");
+        AddTo<space3d::Transform>(scene, link).position = {-1.5f, 0, 0};
+        NavLink& l = AddTo<NavLink>(scene, link);
+        l.end = {4, 0, 0};
+        l.move = move;
+        l.jumpHeight = 2;
+        if (withDoor) {
+            door = scene.Create("扉");
+            AddTo<space3d::Transform>(scene, door).position = {-5, 0, 0};
+            NavArea& a = AddTo<NavArea>(scene, door);
+            a.size = {1, 2, 12};
+            a.area = "0";
+        }
+        navigation_x_3d::RegisterRuntime(reg);
+        game_x_navigation::RegisterRuntime(reg);
+        const Worlds worlds = WorldsOf(scene);
+        const auto v = FindVolume(scene, worlds, volume);
+        NavInput in;
+        CollectInput(scene, worlds, *v, SourcesOf(reg), nullptr, {}, in);
+        navigation::BakeOptions o;
+        o.bounds = v->bounds;
+        o.agent = AgentOf(scene.Setting<NavSettings>()->agentTypes.front());
+        NavData d;
+        navigation::Bake(in, o, {}, nullptr, d, nullptr);
+        baked = WriteNavFile(d, {});
+        static_cast<NavMeshVolume*>(scene.Find(volume)->FindComponent(reflect::TypeOf<NavMeshVolume>().name)->value.Get())->baked =
+            AssetRef{"00000000000000000000000000000abd"};
+        std::string* b = &baked;
+        assets.bytes = [b](const AssetRef& r) -> std::optional<std::string> {
+            if (r.guid == "00000000000000000000000000000abd") return *b;
+            return std::nullopt;
+        };
+        agent = scene.Create("敵");
+        AddTo<space3d::Transform>(scene, agent).position = {-8, 0.5f, 0};
+        AddTo<NavAgent>(scene, agent).speed = 4;
+    }
+    void Step(int n, float* highest = nullptr) {
+        for (int i = 0; i < n; ++i) {
+            game_production::SystemContext ctx{scene, 1.f / 60};
+            ctx.assets = &assets;
+            ctx.events = &events;
+            ctx.registry = &reg;
+            RunNavigation(ctx);
+            if (highest) *highest = std::max(*highest, Position().y);
+        }
+    }
+    Vec3 Position() {
+        return static_cast<space3d::Transform*>(scene.Find(agent)->FindComponent(reflect::TypeOf<space3d::Transform>().name)->value.Get())->position;
+    }
+    int Count(const char* name) const {
+        int n = 0;
+        for (const auto& e : events) n += e.name == name ? 1 : 0;
+        return n;
+    }
+};
+
+}  // namespace
+
+RM_TEST(NavWorldWalksAndJumpsOverTheLink) {
+    for (const NavLinkMove move : {NavLinkMove::Walk, NavLinkMove::Jump}) {
+        LinkPlay play(move);
+        play.Step(1);
+        NavWorldOf(play.scene).SetDestination(play.agent, {8, 0, 0});
+        float highest = -100;
+        play.Step(60 * 8, &highest);
+        CHECK(Near(play.Position().x, 8, 0.4f) && Near(play.Position().z, 0, 0.4f));
+        CHECK(play.Count(kNavArrivedEvent) == 1);
+        if (move == NavLinkMove::Jump) {
+            CHECK(highest > 0.8f);  // 放物線 (跳ぶ高さ 2 m)
+        } else {
+            CHECK(highest < 0.3f);
+        }
+    }
+    // 線を切ると渡れない (行き先の手前まで)。
+    LinkPlay play(NavLinkMove::Walk);
+    play.Step(1);
+    CHECK(NavWorld::SetLinkEnabled(play.scene, play.link, false));
+    NavWorldOf(play.scene).SetDestination(play.agent, {8, 0, 0});
+    play.Step(60 * 8);
+    CHECK(play.Position().x < 0);
+}
+
+RM_TEST(NavScriptLinkWaitsForCompleteLink) {
+    LinkPlay play(NavLinkMove::Script);
+    play.Step(1);
+    NavWorldOf(play.scene).SetDestination(play.agent, {8, 0, 0});
+    play.Step(60 * 4);
+    CHECK(play.Count(kNavLinkEvent) == 1);
+    for (const auto& e : play.events) {
+        if (e.name == kNavLinkEvent) CHECK(e.target == play.agent && e.entity == play.link && e.text == "橋");
+    }
+    const NavWorld::Agent* a = FindNavWorld(play.scene)->FindAgent(play.agent);
+    CHECK(a && a->waitingLink == static_cast<uint32_t>(play.link));
+    const float x = play.Position().x;
+    CHECK(x < -1 && x > -4);  // 線の始めの手前で待つ
+    play.Step(60);
+    CHECK(Near(play.Position().x, x, 0.05f) && play.Count(kNavLinkEvent) == 1);  // 待ち続ける (知らせは 1 回)
+    // スクリプトが渡し終えたと言う (API 版 2)。
+    const auto& part = game_x_navigation::ScriptNavPart2();
+    CHECK(std::string_view(part.name) == RM_PART_NAV && part.version == RM_PART_NAV_VERSION2);
+    const auto* api = static_cast<const RmNavApi2*>(part.table);
+    game_production::ScriptWorld sw;
+    sw.scene = &play.scene;
+    CHECK(api->completeLink(&sw, 99999) == 0);
+    CHECK(api->completeLink(&sw, static_cast<uint64_t>(play.agent)) == 1);
+    CHECK(play.Position().x > 1);  // 終わりへ移った
+    play.Step(60 * 4);
+    CHECK(Near(play.Position().x, 8, 0.4f) && play.Count(kNavArrivedEvent) == 1);
+    CHECK(api->v1.stop(&sw, static_cast<uint64_t>(play.agent)) == 1);  // 版 1 の物も使える
+    CHECK(api->setLinkEnabled(&sw, static_cast<uint64_t>(play.link), 0) == 1);
+    CHECK(api->setLinkEnabled(&sw, static_cast<uint64_t>(play.agent), 0) == 0);  // 線ではない
+}
+
+RM_TEST(NavWorldDoorOpensAndCloses) {
+    LinkPlay play(NavLinkMove::Walk, true);
+    play.Step(1);
+    const auto* api = static_cast<const RmNavApi2*>(game_x_navigation::ScriptNavPart2().table);
+    game_production::ScriptWorld sw;
+    sw.scene = &play.scene;
+    CHECK(api->setAreaClosed(&sw, static_cast<uint64_t>(play.door), 1) == 1);
+    CHECK(api->setAreaClosed(&sw, static_cast<uint64_t>(play.link), 1) == 0);  // エリアではない
+    NavWorldOf(play.scene).SetDestination(play.agent, {8, 0, 0});
+    play.Step(60 * 4);
+    CHECK(play.Position().x < -5);  // 扉の手前
+    CHECK(api->setAreaClosed(&sw, static_cast<uint64_t>(play.door), 0) == 1);
+    NavWorldOf(play.scene).SetDestination(play.agent, {8, 0, 0});
+    play.Step(60 * 8);
+    CHECK(Near(play.Position().x, 8, 0.4f));
+}
+
+RM_TEST(NavFingerprintIgnoresDoorsAndLinkSwitches) {
+    LinkPlay play(NavLinkMove::Walk, true);
+    RuntimeRegistry reg;
+    navigation_x_3d::RegisterRuntime(reg);
+    const std::vector<const NavSourceInfo*> sources = SourcesOf(reg);
+    const NavAgentType& type = play.scene.Setting<NavSettings>()->agentTypes.front();
+    auto print = [&] {
+        const Worlds w = WorldsOf(play.scene);
+        return Fingerprint(play.scene, w, *FindVolume(play.scene, w, play.volume), type, sources, nullptr);
+    };
+    const uint64_t before = print();
+    NavWorld::SetAreaClosed(play.scene, play.door, true);
+    NavWorld::SetLinkEnabled(play.scene, play.link, false);
+    CHECK(print() == before);  // 焼き直さない
+    static_cast<NavLink*>(play.scene.Find(play.link)->FindComponent(reflect::TypeOf<NavLink>().name)->value.Get())->end = {4, 0, 1};
+    CHECK(print() != before);  // 線を動かすと古い
+    const uint64_t moved = print();
+    static_cast<NavMeshVolume*>(play.scene.Find(play.volume)->FindComponent(reflect::TypeOf<NavMeshVolume>().name)->value.Get())->obstacles = true;
+    CHECK(print() != moved);
 }

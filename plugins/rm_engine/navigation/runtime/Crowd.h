@@ -34,6 +34,9 @@ struct AgentView {
     Vec3 velocity{0, 0, 0};  // 今の速さ
     Vec3 desired{0, 0, 0};   // 望む速さ
     Vec3 goal{0, 0, 0};      // 通路の終わり (行き先か、行ける一番近い所)
+    bool onLink = false;     // つなぎの線を渡っている (Detour が線の始めから終わりへ動かす)
+    uint32_t nextLink = 0;   // 通路の先の、次のつなぎの線 (NavLinkInput::id。0: 無い)
+    float toNextLink = 0;    // その始めまでの横の距離
 };
 
 class NavCrowd {
