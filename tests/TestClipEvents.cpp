@@ -182,3 +182,16 @@ RM_TEST(ClipEvents_RootMotionSetting) {
     // 既定に戻すと "root" を消し、空になったクリップと "clips" も消す
     CHECK(SetClipRoot(one, "歩く", ClipRootMotion{}).IsNull());
 }
+
+// 書き出しの設定 (クリップの "bake"): ルートモーションと同じ決まり (名前で保存・知らないキーを残す・既定なら消える)。
+RM_TEST(ClipEvents_BakeSetting) {
+    CHECK(ReadClipBake(json::Value(), "歩く") == ClipBake{});
+    ClipBake b;
+    b.compression = space3d::ClipCompression::Strong;
+    b.always = true;
+    const json::Value one = SetClipBake(P(R"({"歩く": {"root": {"enabled": true}}})"), "歩く", b);
+    CHECK(ReadClipBake(one, "歩く") == b && ReadClipRoot(one, "歩く").enabled);
+    CHECK(one.Get("歩く").Get("bake").Get("compression").AsString() == "Strong");
+    const json::Value back = SetClipBake(one, "歩く", ClipBake{});
+    CHECK(back.Get("歩く").Find("bake") == nullptr && ReadClipRoot(back, "歩く").enabled);
+}

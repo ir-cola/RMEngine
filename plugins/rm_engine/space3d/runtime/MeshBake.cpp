@@ -1,5 +1,7 @@
 #include "rm_engine/space3d/runtime/MeshBake.h"
 
+#include "rm_engine/space3d/runtime/ClipPack.h"
+
 #include <algorithm>
 #include <cstring>
 #include <format>
@@ -236,6 +238,41 @@ std::string WriteBakedMesh(const MeshData& mesh, const std::vector<BakedPictures
                 }
             });
         }
+        // 圧縮したクリップの動き (ClipPack.h。ANIM の後。圧縮していないクリップは 0)。
+        if (std::any_of(mesh.clips.begin(), mesh.clips.end(), [](const Clip& c) { return !c.packed.empty(); })) {
+            auto channel = [&](const PackedChannel& ch) {
+                o.Put<uint8_t>(static_cast<uint8_t>(ch.kind));
+                switch (ch.kind) {
+                    case PackedChannel::Kind::Empty: break;
+                    case PackedChannel::Kind::Constant:
+                        for (const float v : ch.constant) o.Put(v);
+                        break;
+                    case PackedChannel::Kind::Keys16:
+                    case PackedChannel::Kind::KeysFloat:
+                        o.Put<uint32_t>(static_cast<uint32_t>(ch.keys.size()));
+                        for (const uint16_t k : ch.keys) o.Put(k);
+                        if (ch.kind == PackedChannel::Kind::Keys16) {
+                            o.V3(ch.lo);
+                            o.V3(ch.step);
+                            for (const uint16_t q : ch.q) o.Put(q);
+                        } else {
+                            for (const float f : ch.f) o.Put(f);
+                        }
+                        break;
+                }
+            };
+            o.Chunk("CPAK", [&] {
+                o.Put<uint32_t>(static_cast<uint32_t>(mesh.clips.size()));
+                for (const Clip& clip : mesh.clips) {
+                    o.Put<uint32_t>(static_cast<uint32_t>(clip.packed.size()));
+                    for (const PackedTrack& p : clip.packed) {
+                        channel(p.t);
+                        channel(p.r);
+                        channel(p.s);
+                    }
+                }
+            });
+        }
         if (std::any_of(mesh.clips.begin(), mesh.clips.end(), [](const Clip& c) { return c.root.enabled; })) {
             o.Chunk("ROOT", [&] {
                 o.Put<uint32_t>(static_cast<uint32_t>(mesh.clips.size()));
@@ -465,6 +502,52 @@ std::optional<MeshData> ReadBakedMesh(std::string_view bytes, std::string* error
                     t.weights.resize(ok ? count : 0);
                     for (float& w : t.weights) ok = ok && c.Get(w);
                 }
+            }
+        } else if (tag == "CPAK") {
+            // (ANIM の後に書く。クリップの数・骨の動きの数が合わなければ壊れている。鍵は PackedChannelValid で確かめる)
+            ok = c.Count(n, 4) && n == m.clips.size();
+            for (size_t k = 0; ok && k < n; ++k) {
+                Clip& clip = m.clips[k];
+                uint32_t tracks = 0;
+                ok = c.Count(tracks, 3) && (tracks == 0 || tracks == clip.tracks.size());
+                clip.packed.resize(ok ? tracks : 0);
+                auto channel = [&](PackedChannel& ch, bool rotation) {
+                    uint8_t kind = 0;
+                    if (!c.Get(kind) || kind > static_cast<uint8_t>(PackedChannel::Kind::KeysFloat)) return false;
+                    ch.kind = static_cast<PackedChannel::Kind>(kind);
+                    if (ch.kind == PackedChannel::Kind::Constant) {
+                        for (float& v : ch.constant) {
+                            if (!c.Get(v)) return false;
+                        }
+                    } else if (ch.kind != PackedChannel::Kind::Empty) {
+                        uint32_t keys = 0;
+                        if (!c.Count(keys, 2)) return false;
+                        ch.keys.resize(keys);
+                        for (uint16_t& key : ch.keys) {
+                            if (!c.Get(key)) return false;
+                        }
+                        if (ch.kind == PackedChannel::Kind::Keys16) {
+                            if (!c.V3(ch.lo) || !c.V3(ch.step)) return false;
+                            uint32_t count = keys * 3;
+                            if (static_cast<uint64_t>(count) * 2 > c.Rest().size()) return false;
+                            ch.q.resize(count);
+                            for (uint16_t& q : ch.q) {
+                                if (!c.Get(q)) return false;
+                            }
+                        } else {
+                            const uint64_t count = uint64_t{keys} * (rotation ? 4 : 3);
+                            if (count * 4 > c.Rest().size()) return false;
+                            ch.f.resize(static_cast<size_t>(count));
+                            for (float& f : ch.f) {
+                                if (!c.Get(f)) return false;
+                            }
+                        }
+                    }
+                    return PackedChannelValid(ch, clip.frames, rotation);
+                };
+                for (PackedTrack& p : clip.packed) ok = ok && channel(p.t, false) && channel(p.r, true) && channel(p.s, false);
+                // (圧縮したクリップの tracks は骨の名前だけ)
+                for (const BoneTrack& t : clip.tracks) ok = ok && (tracks == 0 || (t.t.empty() && t.r.empty() && t.s.empty()));
             }
         } else if (tag == "ROOT") {
             // (ANIM の後に書く。クリップの数が合わなければ壊れている)

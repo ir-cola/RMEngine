@@ -23,6 +23,10 @@ void ApplyClipSettings(std::vector<Clip>& clips, const json::Value& import) {
             clip.root = {};
             reflect::Load(clip.root, *root);
         }
+        if (const json::Value* bake = one->Find(kClipBakeKey); bake && bake->IsObject()) {
+            clip.bake = {};
+            reflect::Load(clip.bake, *bake);
+        }
         const json::Value* events = one->Find("events");
         if (!events || !events->IsArray()) continue;
         clip.events.clear();

@@ -119,28 +119,33 @@ json::Value RemoveClipEvent(const json::Value& clips, std::string_view clip, siz
     return WithEvents(clips, clip, events, nullptr);
 }
 
-ClipRootMotion ReadClipRoot(const json::Value& clips, std::string_view clip) {
-    ClipRootMotion out;
+namespace {
+
+// クリップの中の 1 つの設定 (キー `key`。T の欄の決まりで読み書きする: "root" と "bake" の 1 本の式)。
+template <class T>
+T ReadClipPart(const json::Value& clips, std::string_view clip, const char* key) {
+    T out;
     const json::Value* c = clips.IsObject() ? clips.Find(clip) : nullptr;
-    const json::Value* root = c && c->IsObject() ? c->Find(space3d::kClipRootKey) : nullptr;
-    if (root && root->IsObject()) reflect::Load(out, *root);
+    const json::Value* v = c && c->IsObject() ? c->Find(key) : nullptr;
+    if (v && v->IsObject()) reflect::Load(out, *v);
     return out;
 }
 
-json::Value SetClipRoot(const json::Value& clips, std::string_view clip, const ClipRootMotion& root) {
+template <class T>
+json::Value SetClipPart(const json::Value& clips, std::string_view clip, const char* key, const T& value) {
     json::Value out = clips.IsObject() ? clips : json::Value::MakeObject();
     const json::Value* was = out.Find(clip);
     json::Value c = was && was->IsObject() ? *was : json::Value::MakeObject();
-    const json::Value* old = c.Find(space3d::kClipRootKey);
-    reflect::Unknowns unknowns;  // "root" の知らないキー (残す)
+    const json::Value* old = c.Find(key);
+    reflect::Unknowns unknowns;  // その設定の知らないキー (残す)
     if (old && old->IsObject()) {
-        ClipRootMotion ignored;
+        T ignored;
         reflect::Load(ignored, *old, &unknowns);
     }
-    if (root == ClipRootMotion{} && unknowns.Empty()) {
-        c.Erase(space3d::kClipRootKey);  // (既定のまま: 書かない)
+    if (value == T{} && unknowns.Empty()) {
+        c.Erase(key);  // (既定のまま: 書かない)
     } else {
-        c.Set(space3d::kClipRootKey, reflect::Save(root, &unknowns));
+        c.Set(key, reflect::Save(value, &unknowns));
     }
     if (c.Size() == 0) {
         out.Erase(clip);
@@ -148,6 +153,20 @@ json::Value SetClipRoot(const json::Value& clips, std::string_view clip, const C
         out.Set(clip, std::move(c));
     }
     return out.Size() == 0 ? json::Value() : out;
+}
+
+}  // namespace
+
+ClipRootMotion ReadClipRoot(const json::Value& clips, std::string_view clip) { return ReadClipPart<ClipRootMotion>(clips, clip, space3d::kClipRootKey); }
+
+json::Value SetClipRoot(const json::Value& clips, std::string_view clip, const ClipRootMotion& root) {
+    return SetClipPart(clips, clip, space3d::kClipRootKey, root);
+}
+
+ClipBake ReadClipBake(const json::Value& clips, std::string_view clip) { return ReadClipPart<ClipBake>(clips, clip, space3d::kClipBakeKey); }
+
+json::Value SetClipBake(const json::Value& clips, std::string_view clip, const ClipBake& bake) {
+    return SetClipPart(clips, clip, space3d::kClipBakeKey, bake);
 }
 
 }  // namespace rm::animation3d

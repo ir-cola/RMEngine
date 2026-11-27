@@ -2,6 +2,7 @@
 
 #include "base/Utf.h"
 #include "core/asset/ImportSettings.h"
+#include "rm_engine/space3d/runtime/ClipPack.h"
 #include "rm_engine/space3d/runtime/ClipSettings.h"
 
 #include <format>
@@ -53,6 +54,8 @@ std::optional<MeshData> Load(const std::filesystem::path& file, const std::strin
     if (mesh) {
         ApplyModelImport(*mesh, BasisOf(imp), imp.turnAround, UnitOf(imp.unit) * imp.scale);
         ApplyClipSettings(mesh->clips, raw);  // (クリップのイベント: .meta の "clips")
+        // クリップの圧縮 (それぞれの "bake" の設定で。エディターの再生も書き出したゲームと同じ姿勢になる)。
+        if (mesh->skin) PackClips(mesh->clips, mesh->skin->skeleton);
     }
     return mesh;
 }

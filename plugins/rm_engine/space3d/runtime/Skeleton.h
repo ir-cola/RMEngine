@@ -169,12 +169,53 @@ inline bool operator==(const ClipRootMotion& a, const ClipRootMotion& b) {
     return a.enabled == b.enabled && a.bone == b.bone && a.horizontal == b.horizontal && a.vertical == b.vertical && a.turn == b.turn;
 }
 
+// クリップの圧縮 (docs/ANIMATION.md 7-3)。誤差は骨の先の位置で: ふつう 1 mm・強く 4 mm (ClipPack.h)。
+RM_ENUM(Label="圧縮")
+enum class ClipCompression {
+    RM_ITEM(Label="しない") None,
+    RM_ITEM(Label="ふつう") Normal,
+    RM_ITEM(Label="強く") Strong,
+};
+
+// クリップの書き出しの設定 (モデルの .meta の "clips" の "bake"。ClipSettings.h)。保存・読み込み・欄はこの定義から (憲法 9)。
+RM_STRUCT(Label="書き出し")
+struct ClipBake {
+    RM_PROPERTY(Edit, Label="圧縮", Tooltip="クリップを小さくします。ふつう: 骨の先が 1 mm より動かないように、強く: 4 mm まで。しない: そのまま (エディターの再生もこの設定で)")
+    ClipCompression compression = ClipCompression::Normal;
+    RM_PROPERTY(Edit, Label="いつも入れる", Tooltip="書き出したゲームに、どのアニメーターも使っていなくても入れます (スクリプトがクリップの名前で流すときに)")
+    bool always = false;
+};
+inline bool operator==(const ClipBake& a, const ClipBake& b) { return a.compression == b.compression && a.always == b.always; }
+
+// 圧縮した列 1 つ (位置・回転・大きさのどれか。ClipPack.h)。サンプルの全部ではなく「鍵」の刻みだけを持ち、間は直線で戻す。
+struct PackedChannel {
+    enum class Kind : uint8_t {
+        Empty,      // 動かない (休みの姿勢のまま)
+        Constant,   // ずっと同じ値 (constant)
+        Keys16,     // 鍵ごとに 16 ビット x 3 (位置・大きさ: lo + q x step、回転: 大きい成分を除いた 3 つ = 48 ビット)
+        KeysFloat,  // 鍵ごとに float x 3 / 4 (16 ビットでは誤差に収まらない大きな動き)
+    };
+    Kind kind = Kind::Empty;
+    std::array<float, 4> constant{0, 0, 0, 1};
+    std::vector<uint16_t> keys;  // 鍵の刻み (0 から frames - 1 まで、増える順。最初は 0、最後は frames - 1)
+    std::vector<uint16_t> q;     // Keys16: 鍵ごとに 3 つ
+    std::vector<float> f;        // KeysFloat: 鍵ごとに 3 つ (位置・大きさ) か 4 つ (回転)
+    Vec3 lo{0, 0, 0}, step{0, 0, 0};  // Keys16 の位置・大きさ
+};
+struct PackedTrack {
+    PackedChannel t, r, s;
+};
+
 struct Clip {
     std::string name;
     float duration = 0;              // 秒
     float rate = kDefaultClipRate;   // 1 秒のサンプル数
     uint32_t frames = 1;             // サンプルの数 = round(duration x rate) + 1
+    // 骨の動き。圧縮したクリップ (packed が空でない) は、tracks には骨の名前だけが残り (t / r / s は空)、
+    // packed[i] が tracks[i] の動き。
     std::vector<BoneTrack> tracks;
+    std::vector<PackedTrack> packed;
+    ClipBake bake;                   // 書き出しの設定 (.meta から。焼いたモデルには入らない: 焼くときにはもう圧縮してある)
     std::vector<ClipEvent> events;   // 時刻の順
     ClipRootMotion root;             // ルートモーション (既定: 使わない)
     std::vector<MorphTrack> morphs;  // ブレンドシェイプの重みの曲線 (Morph.h。形は名前で指す)

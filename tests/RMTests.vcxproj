@@ -112,6 +112,7 @@
     <ClCompile Include="TestHelp.cpp" />
     <ClCompile Include="TestIcons.cpp" />
     <ClCompile Include="TestMeshBake.cpp" />
+    <ClCompile Include="TestClipPack.cpp" />
     <ClCompile Include="TestSkeleton.cpp" />
     <ClCompile Include="TestAnimation3d.cpp" />
     <ClCompile Include="..\plugins\rm_engine\animation3d\runtime\Pose.cpp" />
@@ -320,6 +321,7 @@
     <ClCompile Include="..\plugins\rm_engine\space3d\runtime\Lighting.cpp" />
     <ClCompile Include="..\plugins\rm_engine\space3d\runtime\MeshFile.cpp" />
     <ClCompile Include="..\plugins\rm_engine\space3d\runtime\ClipSettings.cpp" />
+    <ClCompile Include="..\plugins\rm_engine\space3d\runtime\ClipPack.cpp" />
     <ClCompile Include="..\plugins\rm_engine\space3d\runtime\TexturePixels.cpp" />
     <ClCompile Include="..\plugins\rm_engine\space3d\runtime\BlockCompress.cpp" />
     <ClCompile Include="..\plugins\rm_engine\space3d\runtime\TextureFile.cpp" />

@@ -7,6 +7,7 @@
 //   threads: 姿勢を base の作業の列 (WorkQueue) で並べて作る (無し: 1 本のスレッド)
 //   cs:      スキニングを Compute Shader で 1 回だけ (無し: 頂点シェーダーで、影の地図を描くたびに)
 //   igpu:    Windows の既定の GPU で (無し: 性能の高い GPU。ノートの PC の別の GPU)
+//   pack:    クリップを圧縮して (ふつう: 骨の先で 1 mm)。メモリの中も圧縮のまま、サンプルするときに戻す
 //   lod:     遠い物の姿勢を 2 / 4 フレームに 1 回にする (画面の上の大きさで。PoseInterval)
 //
 // 1 フレームの「姿勢を作る CPU 時間」と「Render の CPU 時間」の平均、GPU の時間 (タイムスタンプのクエリ) の平均を出す。
@@ -14,6 +15,7 @@
 #include "base/WorkQueue.h"
 #include "rm_engine/animation3d/runtime/Player.h"
 #include "rm_engine/animation3d/runtime/Thinning.h"
+#include "rm_engine/space3d/runtime/ClipPack.h"
 #include "rm_engine/space3d/runtime/Mesh.h"
 #include "rm_engine/space3d/runtime/Renderer3D.h"
 #include "rm_engine/space3d/runtime/View.h"
@@ -114,13 +116,14 @@ double Ms(std::chrono::steady_clock::duration d) { return std::chrono::duration<
 int main(int argc, char** argv) {
     const int frames = argc > 1 && std::atoi(argv[1]) > 0 ? std::atoi(argv[1]) : 300;
     const int count = argc > 2 && std::atoi(argv[2]) > 0 ? std::atoi(argv[2]) : 300;
-    bool threads = false, cs = false, lod = false, igpu = false;
+    bool threads = false, cs = false, lod = false, igpu = false, pack = false;
     for (int i = 3; i < argc; ++i) {
         const std::string a = argv[i];
         threads = threads || a == "threads";
         cs = cs || a == "cs";
         lod = lod || a == "lod";
         igpu = igpu || a == "igpu";
+        pack = pack || a == "pack";
     }
     Microsoft::WRL::ComPtr<ID3D11Device> device;
     Microsoft::WRL::ComPtr<ID3D11DeviceContext> ctx;
@@ -158,6 +161,12 @@ int main(int argc, char** argv) {
         return 1;
     }
     std::vector<Clip> clips{MakeClip("walk", 2), MakeClip("run", 3)};
+    size_t rawBytes = 0, clipBytes = 0;
+    for (Clip& c : clips) {
+        rawBytes += ClipBytes(c);
+        if (pack) PackClip(c, skel, PackTolerance(ClipCompression::Normal));
+        clipBytes += ClipBytes(c);
+    }
 
     // キャラクター: 格子に並べる (奥ほど遠い)。混ぜる重みは体ごとに違う。
     struct Body {
@@ -273,9 +282,10 @@ int main(int argc, char** argv) {
         }
     }
     const double n = std::max(1, frames - 10);
-    std::printf("characters %d  bones %d  vertices %zu  options:%s%s%s  (threads %u)\n", count, kBones, mesh.vertices.size(), threads ? " threads" : "",
-                cs ? " cs" : "", lod ? " lod" : "", queue.Threads());
-    std::printf("pose   %.3f ms / frame (CPU)\n", poseMs / n);
+    std::printf("characters %d  bones %d  vertices %zu  options:%s%s%s%s  (threads %u)\n", count, kBones, mesh.vertices.size(),
+                threads ? " threads" : "", cs ? " cs" : "", lod ? " lod" : "", pack ? " pack" : "", queue.Threads());
+    std::printf("pose   %.3f ms / frame (CPU)   clips %.1f KB (raw %.1f KB)\n", poseMs / n, static_cast<double>(clipBytes) / 1024.0,
+                static_cast<double>(rawBytes) / 1024.0);
     std::printf("render %.3f ms / frame (CPU)\n", renderMs / n);
     std::printf("gpu    %.3f ms / frame\n", gpuSamples > 0 ? gpuMs / gpuSamples : 0.0);
     const Renderer::Stats& st = r.LastStats();

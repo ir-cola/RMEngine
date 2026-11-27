@@ -26,5 +26,13 @@
   "縦の移動 (Y)": "Vertical movement (Y)",
   "上下の動きを取り出します (物理のキャラクターがあるときは使いません: 重力とジャンプは物理)": "Takes out up and down movement (not used with a physics character: gravity and jumping belong to physics)",
   "Y のまわりの回転": "Rotation around Y",
-  "向きの変わり (曲がる・振り向く) を取り出して、エンティティを回します": "Takes out changes of facing (turning, looking back) and turns the entity"
+  "向きの変わり (曲がる・振り向く) を取り出して、エンティティを回します": "Takes out changes of facing (turning, looking back) and turns the entity",
+  "圧縮": "Compression",
+  "しない": "None",
+  "ふつう": "Normal",
+  "強く": "Strong",
+  "書き出し": "Export",
+  "いつも入れる": "Always include",
+  "クリップを小さくします。ふつう: 骨の先が 1 mm より動かないように、強く: 4 mm まで。しない: そのまま (エディターの再生もこの設定で)": "Makes the clip smaller. Normal: bone tips move less than 1 mm, Strong: up to 4 mm. None: kept as is (playback in the editor uses this setting too)",
+  "書き出したゲームに、どのアニメーターも使っていなくても入れます (スクリプトがクリップの名前で流すときに)": "Includes the clip in the exported game even if no animator uses it (for scripts that play clips by name)"
 }

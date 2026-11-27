@@ -3,6 +3,16 @@
   "format": 1,
   "updates": [
     {
+      "version": "0.0.44",
+      "date": "2026-11-28",
+      "items": [
+        {
+          "ja": "骨のアニメーションのクリップを圧縮: 既定の「ふつう」で骨の先のずれ 1 mm まで、大きさが 4 割ほどに (インスペクターの「クリップの書き出し」で しない / ふつう / 強く)",
+          "en": "Bone animation clips are compressed: the default Normal keeps bone tips within 1 mm at about 40% of the size (None / Normal / Strong in the inspector's Clip export)"
+        }
+      ]
+    },
+    {
       "version": "0.0.43",
       "date": "2026-11-28",
       "items": [

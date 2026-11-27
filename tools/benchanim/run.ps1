@@ -25,6 +25,7 @@ $sources = @(
     'plugins\rm_engine\space3d\runtime\Mesh.cpp',
     'plugins\rm_engine\space3d\runtime\Morph.cpp',
     'plugins\rm_engine\space3d\runtime\Skeleton.cpp',
+    'plugins\rm_engine\space3d\runtime\ClipPack.cpp',
     'plugins\rm_engine\space3d\runtime\Primitives.cpp',
     'plugins\rm_engine\space3d\runtime\RendererShaders.cpp',
     'plugins\rm_engine\space3d\runtime\SkyShader.cpp',

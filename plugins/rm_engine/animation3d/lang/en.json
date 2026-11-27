@@ -31,5 +31,7 @@
   "1 回で 前へ {:.2f} m · 右へ {:.2f} m · 上へ {:.2f} m · 回る {:.0f}°": "One pass: forward {:.2f} m · right {:.2f} m · up {:.2f} m · turn {:.0f}°",
   "全部 0 に": "All to 0",
   "つまみは試すだけです (保存しません)。シーンビューで選んだ、このモデルの物にも映ります": "The sliders are only for trying (nothing is saved). They also show on this model's selected objects in the scene view",
-  "ブレンドシェイプ ({})": "Blend shapes ({})"
+  "ブレンドシェイプ ({})": "Blend shapes ({})",
+  "クリップの書き出し": "Clip export",
+  "骨の動きの大きさ {:.1f} KB → {:.1f} KB (書き出したゲームも、エディターの再生もこの形)": "Bone motion size {:.1f} KB → {:.1f} KB (the exported game and playback in the editor both use this)"
 }

@@ -1,5 +1,7 @@
 #include "rm_engine/animation3d/runtime/Pose.h"
 
+#include "rm_engine/space3d/runtime/ClipPack.h"
+
 #include <algorithm>
 #include <cmath>
 #include <string_view>
@@ -85,8 +87,16 @@ BoneTRS SampleAt(const space3d::Clip& clip, const ClipBinding& binding, const sp
     const BoneTRS& rest = skeleton.bones[i].rest;
     const int ti = i < binding.track.size() ? binding.track[i] : -1;
     if (ti < 0 || static_cast<size_t>(ti) >= clip.tracks.size()) return rest;
-    const space3d::BoneTrack& tr = clip.tracks[static_cast<size_t>(ti)];
     BoneTRS out;
+    if (clip.packed.size() == clip.tracks.size()) {  // 圧縮したクリップ: 前後 2 つの鍵だけ戻す (ClipPack.h)
+        const space3d::PackedTrack& p = clip.packed[static_cast<size_t>(ti)];
+        const float frame = static_cast<float>(i0) + w;
+        out.t = space3d::SamplePackedVec(p.t, frame, rest.t);
+        out.r = space3d::SamplePackedQuat(p.r, frame, rest.r);  // (混ぜた後に長さを 1 にしてある)
+        out.s = space3d::SamplePackedVec(p.s, frame, rest.s);
+        return out;
+    }
+    const space3d::BoneTrack& tr = clip.tracks[static_cast<size_t>(ti)];
     out.t = SampleChannel(tr.t, i0, w, rest.t, Lerp);
     out.r = space3d::QuatNormalize(SampleChannel(tr.r, i0, w, rest.r, QuatNlerp));
     out.s = SampleChannel(tr.s, i0, w, rest.s, Lerp);

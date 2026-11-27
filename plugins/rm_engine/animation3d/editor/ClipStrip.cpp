@@ -10,6 +10,7 @@
 #include "rm_engine/animation3d/editor/ClipEvents.h"
 #include "rm_engine/animation3d/runtime/MorphPreview.h"
 #include "rm_engine/animation3d/runtime/RootMotion.h"
+#include "rm_engine/space3d/runtime/ClipPack.h"
 #include "rm_engine/space3d/editor/Preview3D.h"
 #include "rm_engine/space3d/runtime/Texture.h"
 #include "rm_engine/space3d/runtime/Mesh.h"
@@ -117,6 +118,9 @@ struct Strip {
     // 「イベント」のブロックの欄が見せるもの (描くたびに .meta の今の値から作る)
     ClipEvent shown;
     reflect::Unknowns shownUnknowns;
+    // 「書き出し」のブロックの欄が見せるもの (描くたびに .meta の今の値から作る)
+    space3d::ClipBake bakeShown;
+    reflect::Unknowns bakeUnknowns;
     // ルートモーションの「根の骨」の ▾ (親の無い骨の名前。0 番は「自動」)
     w::Popup bonePopup;
     std::vector<std::string> boneChoices;
@@ -529,6 +533,39 @@ std::vector<editor::InspectBlock> BlocksOf(const std::shared_ptr<Strip>& sp) {
     strip.customHeight = [count, root](ui::Context&, float) { return StripHeight(count, root); };
     strip.customDraw = [sp, clips = std::move(clips), reading, view](ui::Context& c, const Rect& r) { DrawStrip(c, r, sp, clips, reading, view); };
     out.push_back(std::move(strip));
+
+    // 書き出し (docs/ANIMATION.md 7-3。骨のあるモデルだけ): 圧縮といつも入れる。欄は ClipBake の定義から、変えると .meta の
+    // "clips" の "bake" に 1 件の Undo で書く。下の文は今の大きさ (読み直したクリップは、もうこの設定で圧縮してある)。
+    if (view.skeleton) {
+        s.bakeShown = ReadClipBake(ClipsOf(s.access.import()), s.clip);
+        s.bakeUnknowns = {};
+        editor::InspectBlock bake;
+        bake.type = &reflect::TypeOf<space3d::ClipBake>();
+        bake.title = Tr(L"クリップの書き出し");
+        const space3d::Clip* data = nullptr;
+        if (view.data) {
+            for (const space3d::Clip& k : *view.data) {
+                if (k.name == s.clip) data = &k;
+            }
+        }
+        if (data) {
+            auto kb = [](size_t bytes) { return static_cast<double>(bytes) / 1024.0; };
+            bake.note = TrF(L"骨の動きの大きさ {:.1f} KB → {:.1f} KB (書き出したゲームも、エディターの再生もこの形)", kb(space3d::RawClipBytes(*data)),
+                            kb(space3d::ClipBytes(*data)));
+        }
+        bake.resolve = [sp]() -> reflect::EditTarget { return {&sp->bakeShown, &sp->bakeUnknowns}; };
+        bake.onEdit = [sp](editor::InspectBlock::Change ch) {
+            Strip& st = *sp;
+            const json::Value clipsNow = ClipsOf(st.access.import());
+            space3d::ClipBake b = ReadClipBake(clipsNow, st.clip);
+            reflect::Unknowns unknowns;
+            const reflect::PathTarget pt = reflect::Resolve(reflect::TypeOf<space3d::ClipBake>(), &b, &unknowns, ch.path);
+            if (!pt.field) return;
+            reflect::LoadField(*pt.field, pt.owner, ch.after, pt.unknowns, nullptr);
+            st.access.setImportKey(kClipsKey, SetClipBake(clipsNow, st.clip, b), std::move(ch.label), ch.merge);
+        };
+        out.push_back(std::move(bake));
+    }
 
     if (s.event >= 0) {
         // 選んだイベントの欄 (インスペクターの欄: 打つ間は Undo の 1 件)。

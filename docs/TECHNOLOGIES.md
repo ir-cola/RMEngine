@@ -1339,6 +1339,17 @@ plugins/            ソフトはプラグインで足す (いまは「ゲーム�
 - **なぜそれか** — Verlet は少ない計算で安定し、長さを保つ (位置を直すだけ) のと相性がよい。VRM と同じ式にしたので、VRoid のモデルの揺れを作り直さずに使える
 - **どこ** — `plugins/rm_engine/animation3d/runtime/Spring.*`・`game_x_animation/runtime/AnimatorSprings.*`・`Animator.h` (`SpringBones`)・`space3d/runtime/Skeleton.h` (`SpringChainSetting`)・`Mesh.cpp` (`ReadSprings`)・`MeshBake.*` (`SPRG`)、`tests/TestAnimation3d.cpp`・`TestGameAnimation.cpp`・`TestGltfSkin.cpp`・`TestMeshBake.cpp`
 
+### クリップの圧縮 (48 ビットの回転・16 ビットの範囲・骨の先の誤差で鍵を選ぶ) (2026-11-28)
+
+- **何か** — 骨のアニメーションのクリップ (骨ごと・刻みごとの位置・回転・大きさ) を小さくする。ゲームのエンジンでよく使うやり方を 3 つ重ねた
+  1. **回転を 48 ビット**: 四元数 (4 つの float = 128 ビット) は長さ 1 なので、一番大きい成分は残りの 3 つから戻せる。どれを除いたか (2 ビット) と、残り 3 つを 15 ビットずつ (範囲は ±1/√2) で持つ (誤差は 0.0001 ラジアンくらい)
+  2. **位置と大きさを 16 ビット**: 列ごとに一番小さい値と刻み (範囲 / 65535) を持ち、各成分を 0〜65535 の数で。範囲が広すぎて誤差に収まらない列 (遠くまで飛ぶ物) は float のまま
+  3. **鍵だけ残す**: 前の鍵から、間のサンプルが直線で戻して誤差の中である限り伸ばし、外れる所で次の鍵にする (欲張り法)。変わらない列は値 1 つ・動かない列は無し
+- **誤差の測り方** — 骨ごとではなく**骨の先の位置**で: 回転の誤差 (ラジアン) x その骨から一番遠い子孫の骨までの長さ = 先のずれ (m)。親の誤差は子に積もるので、上限 (ふつう 1 mm・強く 4 mm) を、その骨を通る一番長い鎖の骨の数で分ける。回転の違いは `acos(内積)` だと 1 の近くで float の丸めが 0.0003 ラジアンもあるので、`4 x atan2(|a - b|, |a + b|)` で測る
+- **使い方** — モデルを読むときに .meta のクリップの設定 (`"bake"` の `"compression"`) で圧縮し、メモリの中も圧縮のまま持つ。姿勢を作るときに、前後 2 つの鍵だけを二分探索で見つけて戻す。焼いたモデル (.rmmesh) には新しいチャンク `CPAK` で書く (読むときは鍵が 0 から frames - 1 まで増える順か・数が合うかを確かめ、壊れていれば読まない)
+- **数字** — `tools/benchanim` のクリップ 2 つ: 122.0 KB → 49.6 KB。姿勢の計算は戻す分だけ遅くなる (1 本のスレッドで 2.6 → 4.2 ms)。メモリと引き換え
+- **どこ** — `space3d/runtime/ClipPack.*`・`Skeleton.h` (`ClipCompression`・`ClipBake`・`PackedChannel`・`PackedTrack`)・`MeshBake.cpp` (`CPAK`)・`MeshFile.cpp` (`PackClips`)・`ClipSettings.*` (`"bake"`)・`animation3d/runtime/Pose.cpp`・`animation3d/editor/ClipStrip.cpp` (「クリップの書き出し」)・`ClipEvents.*`、`tests/TestClipPack.cpp`
+
 ### Compute Shader のスキニング (1 本の置き場所・まとめ描きのまま) (2026-11-28)
 
 - **何か** — 骨のあるメッシュの頂点に骨の行列を掛ける (スキニング) のを、描くたびの頂点シェーダーではなく、1 フレームに 1 回の Compute Shader (`cs_5_0`) でする。影の地図を何枚描いても、スキニングは 1 回
@@ -1360,6 +1371,7 @@ plugins/            ソフトはプラグインで足す (いまは「ゲーム�
 | 日付 | 足したこと |
 |---|---|
 | 2026-11-27 | 作業の列 (std::jthread の小さなスレッドの組・ParallelFor)・遠い物を間引く (画面の上の大きさ)・アニメーションの計測 tools/benchanim |
+| 2026-11-28 | クリップの圧縮 (48 ビットの回転・16 ビットの範囲・骨の先の誤差で鍵を選ぶ・atan2 で回転の違いを測る)・焼いたモデルのチャンク CPAK |
 | 2026-11-28 | Compute Shader のスキニング (1 本の置き場所・SV_VertexID で読む・まとめ描きのまま)・ComPtr の & の落とし穴・性能の高い GPU を選ぶ (EnumAdapterByGpuPreference) |
 | 2026-11-27 | 揺れる骨 (Verlet・長さを保つ・球から押し出す・決まった刻み)・VRM の揺れの設定 (VRMC_springBone / secondaryAnimation) |
 | 2026-11-27 | ブレンドシェイプ (形の差を重みで足す・Compute Shader で頂点を作る: 生のバイトのバッファと UAV・FBX の BlendShape) |

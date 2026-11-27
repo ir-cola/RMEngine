@@ -58,4 +58,11 @@ ClipRootMotion ReadClipRoot(const json::Value& clips, std::string_view clip);
 // 空になったクリップと "clips" も消す)。
 json::Value SetClipRoot(const json::Value& clips, std::string_view clip, const ClipRootMotion& root);
 
+// --- 書き出し (docs/ANIMATION.md 7-3): クリップの "bake" (ClipBake の欄の決まり: 圧縮・いつも入れる) ---
+using space3d::ClipBake;
+// クリップ `clip` の書き出しの設定 (無い: 既定 = 圧縮ふつう・いつも入れない)。
+ClipBake ReadClipBake(const json::Value& clips, std::string_view clip);
+// クリップ `clip` の "bake" を `bake` に (SetClipRoot と同じ決まり)。
+json::Value SetClipBake(const json::Value& clips, std::string_view clip, const ClipBake& bake);
+
 }  // namespace rm::animation3d

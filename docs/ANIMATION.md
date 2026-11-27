@@ -430,6 +430,8 @@ rule any  :             -> Idle 0.2
 - **段階 7 で後にしたこと (1)**: デバッグ パネルにアニメーターごとの間引いた数 (`AnimatorRun::skippedPoses` はある)・物理・パーティクル・天候も作業の列を使う
 - **段階 7 でしたこと (2: Compute Shader のスキニング。2026-11-28。版 0.0.43)**: 形 (7-2-2) と骨を 1 つの Compute Shader (`MorphCS`) で、フレームの全部の描画の分を 1 本の置き場所に。メッシュごとに 1 回の `Dispatch`。描くときは `DeformedMeshVS` / `DeformedShadowVS` が DRAW.w + `SV_VertexID` で読む (まとめ描きのまま)。段階 6 の「形を足した写しのメッシュ」もこれにまとめた (形だけのとき・頂点シェーダーのスキニングのときも、同じ置き場所から読む)。頂点シェーダーのスキニングは残す (`Renderer::SetComputeSkinning(false)`・Compute Shader が使えない GPU)。テスト `Skinning_ComputeShaderMatchesVertexShader`。ベンチマークは性能の高い GPU を選ぶ (`igpu` で既定の GPU)。速さの差はこの絵では小さい (RTX 4060 で 4.1〜4.3 → 4.3〜4.4 ms)
 - **段階 7 で後にしたこと (2)**: 姿勢の版が変わらない物 (間引いたフレーム・止まった物) は頂点を作り直さない・エディターとゲームも性能の高い GPU を選ぶか (今は Windows の既定)
+- **段階 7 でしたこと (3: クリップの圧縮。2026-11-28。版 0.0.44)**: `space3d/runtime/ClipPack` (回転 48 ビット・位置と大きさは列ごとの範囲で 16 ビット (収まらない列は float)・誤差の中で鍵を選ぶ・骨の先で測り鎖の骨の数で分ける)。クリップの設定 `"bake"` (`ClipBake`: 圧縮 [しない | ふつう | 強く]・いつも入れる) を `ClipSettings` が読み、`LoadMeshFile` が `PackClips`。メモリの中も圧縮のまま (`Clip::packed`。`tracks` は骨の名前だけ)、`Pose.cpp` が前後 2 つの鍵だけ戻す。焼いたモデルのチャンク `CPAK`。インスペクターのブロック「クリップの書き出し」(欄は `ClipBake` の定義から・Undo・大きさの文)。ベンチマークの `pack`: 122.0 KB → 49.6 KB、姿勢は 1 本で 2.6 → 4.2 ms
+- **段階 7 で後にしたこと (3)**: 戻すのを速くする (鍵の場所を前のフレームから覚える・同じ刻みの骨をまとめて戻す)・ブレンドシェイプの重みの列 (`MorphTrack`) も圧縮する
 - 段階ごとに版を 0.0.1 上げ、`resources/updates.json`・`docs/HOW_TO_TRY.md`・`docs/TEST_LIST.md`・`docs/TECHNOLOGIES.md` (スキニング・四元数・ドロネーなど) に書く
 - 段階 1 の前に、骨のある見本のモデルを決める (6 章の 4)
 - 段階 5〜7・2D のコマ送り・後にしたものの割り振り・ナビゲーションとのつなぎの詳しい設計は **7 章** (2026-11-26)
@@ -480,7 +482,7 @@ rule any  :             -> Idle 0.2
 | 物理のキャラクター | `physics/runtime/PhysicsWorld.cpp` (`CharRec`・`StepCharacters`) | Jolt の `CharacterVirtual`。回転は持たない (`Quat::sIdentity()`)。`Move` は「欲しい水平の速さ」`walk` を変えるまで持ち続ける。刻みごとに、縦は地面の速さか自分の落下 + 重力、横は `walk` で `SetLinearVelocity` → `ExtendedUpdate` (段差は `mWalkStairsStepUp`)。書き戻し (`WriteBack`) は**位置だけ** Jolt から、回転は Transform のまま |
 | 光線 | `PhysicsWorld::Raycast(origin, direction, maxDistance)` | トリガーは除く。**キャラクターにも当たる** (除く物は選べない) |
 | スクリプト | `game_x_animation/runtime/sdk/RMAnim.h` | 部分は `animator` (版 1) と `animator_rules` (版 1)。3-9 に書いた `SetLayerWeight` は**まだ無い** |
-| 焼いたモデル | `space3d/runtime/MeshBake.h` | チャンク `BNDS VERT INDX PART MATL SHRP` + `SKEL SKIN IBND BBOX` + `ANIM EVNT`。クリップは `.rmmesh` の中で、`.rmclip` は無い。知らないチャンクは飛ばす |
+| 焼いたモデル | `space3d/runtime/MeshBake.h` | チャンク `BNDS VERT INDX PART MATL SHRP` + `SKEL SKIN IBND BBOX` + `ANIM EVNT` (+ 段階 7 の `CPAK`: 圧縮したクリップ)。クリップは `.rmmesh` の中で、`.rmclip` は無い。知らないチャンクは飛ばす |
 | モーフ | `space3d/runtime/Mesh.h`・`Fbx.h` | glTF のモーフターゲット (と `weights` のアニメーション)・FBX のブレンドシェイプは読まない。頂点 `MeshVertex` は位置・法線・UV だけ |
 | GPU | `space3d/runtime/RendererShaders.cpp`・`particles/runtime/ParticlePlayer.cpp` | 骨の行列は `Buffer<float4> bones : register(t10)`。Compute Shader (`cs_5_0`) はパーティクルがもう使っている |
 | 2D のコマ送り | `game_x_2d/runtime/SpriteAnimation.h`・`Sprite.h`・`space2d/runtime/Atlas.h` | 部品「スプライトのアニメーション」(コマの並び・1 秒のコマ数・繰り返す) が、スプライトの `cell` を決める。計算は `space2d::AnimationCell` / `AnimationStep` |
